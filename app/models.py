@@ -67,10 +67,12 @@ class Batch(Base):
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
     published = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     published_at = Column(DateTime, nullable=True)
+    # galleria pubblica senza brand: sola visualizzazione via link, nessun login richiesto
+    public_token = Column(String, unique=True, nullable=True)
 
     brand = relationship("Brand", back_populates="batches")
     photos = relationship("Photo", back_populates="batch", cascade="all, delete-orphan")

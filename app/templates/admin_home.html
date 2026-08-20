@@ -28,7 +28,8 @@
       </div>
       <div>
         <label>Brand</label>
-        <select name="brand_id" required>
+        <select name="brand_id">
+          <option value="">— Galleria pubblica (nessun brand, link senza login) —</option>
           {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
         </select>
       </div>
@@ -45,10 +46,11 @@
         {% set rejected_count = b.photos|selectattr("status.value", "equalto", "rejected")|list|length %}
         <tr>
           <td>{{ b.name }}</td>
-          <td>{{ b.brand.name }}</td>
+          <td>{{ b.brand.name if b.brand else "Galleria pubblica" }}</td>
           <td>{{ b.photos|length }}</td>
           <td>
-            {% if b.published %}<span class="badge badge-published">Pubblicato</span>
+            {% if b.public_token %}<span class="badge badge-role">Pubblica</span>
+            {% elif b.published %}<span class="badge badge-published">Pubblicato</span>
             {% else %}<span class="badge badge-draft">Bozza</span>{% endif %}
             {% if rejected_count > 0 %}<span class="badge badge-rejected">{{ rejected_count }} da correggere</span>{% endif %}
           </td>

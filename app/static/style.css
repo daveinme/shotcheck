@@ -456,3 +456,18 @@ th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: upp
   font-size: 12px; line-height: 1.5;
 }
 .tip-body.tip-open { display: block; }
+
+/* ── Galleria pubblica: griglia minimal + lightbox, nessuna azione ── */
+.pg-tile {
+  border-radius: 8px; overflow: hidden; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+  transition: border-color 0.15s;
+}
+.pg-tile:hover { border-color: var(--accent); }
+.pg-tile img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
+
+.pg-lightbox {
+  position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+.pg-lightbox img { max-width: 90vw; max-height: 90vh; object-fit: contain; }

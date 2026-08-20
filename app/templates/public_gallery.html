@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ batch.name }} — {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+
+<div class="container" style="max-width:1300px;">
+  <h1 style="margin-bottom:4px;">{{ batch.name }}</h1>
+  <div class="hint" style="margin-bottom:24px;">{{ photos|length }} foto</div>
+
+  {% if not photos %}
+  <div class="panel hint">Nessuna foto in questa galleria.</div>
+  {% endif %}
+
+  <div class="photo-grid">
+    {% for p in photos %}
+    <div class="pg-tile" data-index="{{ loop.index0 }}">
+      <img src="/files/version/{{ p.latest_version.id }}" alt="{{ p.sku }}" loading="lazy">
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="pg-lightbox" class="pg-lightbox" hidden>
+  <button type="button" id="pg-close" class="detail-close" aria-label="Chiudi">&times;</button>
+  <button type="button" id="pg-prev" class="detail-nav detail-prev" aria-label="Precedente">&#8249;</button>
+  <button type="button" id="pg-next" class="detail-nav detail-next" aria-label="Successiva">&#8250;</button>
+  <img id="pg-lightbox-img" src="" alt="">
+</div>
+
+<script>
+(function () {
+  const photoIds = {{ photos|map(attribute="latest_version.id")|list|tojson }};
+  const lightbox = document.getElementById("pg-lightbox");
+  const lightboxImg = document.getElementById("pg-lightbox-img");
+  let index = 0;
+
+  function show(i) {
+    index = (i + photoIds.length) % photoIds.length;
+    lightboxImg.src = `/files/version/${photoIds[index]}`;
+  }
+
+  document.querySelectorAll(".pg-tile").forEach((tile) => {
+    tile.addEventListener("click", () => {
+      show(Number(tile.dataset.index));
+      lightbox.hidden = false;
+    });
+  });
+
+  document.getElementById("pg-close").addEventListener("click", () => lightbox.hidden = true);
+  document.getElementById("pg-prev").addEventListener("click", () => show(index - 1));
+  document.getElementById("pg-next").addEventListener("click", () => show(index + 1));
+  lightbox.addEventListener("click", (e) => { if (e.target === lightbox) lightbox.hidden = true; });
+  document.addEventListener("keydown", (e) => {
+    if (lightbox.hidden) return;
+    if (e.key === "Escape") lightbox.hidden = true;
+    if (e.key === "ArrowLeft") show(index - 1);
+    if (e.key === "ArrowRight") show(index + 1);
+  });
+})();
+</script>
+</body>
+</html>

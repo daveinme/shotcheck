@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_login
+from app.auth import get_current_user, require_login
 from app.db import get_db
 from app.models import User, UserRole, PhotoVersion, RawUpload
 from app.storage import presigned_url, raw_presigned_url
@@ -13,7 +13,7 @@ router = APIRouter()
 @router.get("/files/version/{version_id}")
 async def serve_photo_version(
     version_id: int,
-    db: Session = Depends(get_db), user: User = Depends(require_login),
+    db: Session = Depends(get_db), user: User | None = Depends(get_current_user),
 ):
     version = db.query(PhotoVersion).filter(PhotoVersion.id == version_id).first()
     if not version:
@@ -21,7 +21,11 @@ async def serve_photo_version(
     photo = version.photo
     batch = photo.batch
 
-    if user.role == UserRole.user:
+    if batch.public_token:
+        pass  # galleria pubblica: accessibile senza login
+    elif not user:
+        raise HTTPException(404, "File non trovato")
+    elif user.role == UserRole.user:
         if batch.brand_id != user.brand_id or not batch.published:
             raise HTTPException(404, "File non trovato")
 

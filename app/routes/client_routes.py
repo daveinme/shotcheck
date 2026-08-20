@@ -692,3 +692,17 @@ async def mark_all_notifications_read(
     query.filter(Notification.read == False).update({"read": True})  # noqa: E712
     db.commit()
     return JSONResponse({"ok": True})
+
+
+@router.get("/g/{token}", response_class=HTMLResponse)
+async def public_gallery(
+    token: str, request: Request,
+    db: Session = Depends(get_db),
+):
+    batch = db.query(Batch).filter(Batch.public_token == token, Batch.published == True).first()  # noqa: E712
+    if not batch:
+        raise HTTPException(404, "Galleria non trovata")
+    photos = sorted(batch.photos, key=lambda p: p.sku)
+    return templates.TemplateResponse("public_gallery.html", {
+        "request": request, "batch": batch, "photos": photos,
+    })

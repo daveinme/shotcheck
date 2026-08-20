@@ -28,17 +28,27 @@
     <div class="row" style="justify-content: space-between;">
       <div>
         <h1 style="margin-bottom:4px;">{{ batch.name }}</h1>
-        <div class="hint">{{ batch.brand.name }} · {{ batch.photos|length }} foto in totale</div>
+        <div class="hint">{{ batch.brand.name if batch.brand else "Galleria pubblica" }} · {{ batch.photos|length }} foto in totale</div>
       </div>
       <div class="row">
         <a href="/admin/batch/{{ batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
-        {% if batch.published %}
-          <span class="badge badge-published">Pubblicato — visibile al cliente</span>
+        {% if batch.brand %}
+          {% if batch.published %}
+            <span class="badge badge-published">Pubblicato — visibile al cliente</span>
+          {% else %}
+            <span class="badge badge-draft">Bozza — non ancora visibile al cliente</span>
+            <form method="post" action="/admin/batch/{{ batch.id }}/publish" onsubmit="return confirm('Confermi la pubblicazione? Il cliente riceverà una email con il link.')">
+              <button type="submit">Invita cliente</button>
+            </form>
+          {% endif %}
         {% else %}
-          <span class="badge badge-draft">Bozza — non ancora visibile al cliente</span>
-          <form method="post" action="/admin/batch/{{ batch.id }}/publish" onsubmit="return confirm('Confermi la pubblicazione? Il cliente riceverà una email con il link.')">
-            <button type="submit">Invita cliente</button>
-          </form>
+          {% if batch.public_token %}
+            <input type="text" class="field" readonly style="width:340px;" value="{{ base_url }}/g/{{ batch.public_token }}" onclick="this.select()">
+          {% else %}
+            <form method="post" action="/admin/batch/{{ batch.id }}/make-public">
+              <button type="submit">Genera link pubblico</button>
+            </form>
+          {% endif %}
         {% endif %}
         {% if staff.role.value == "superadmin" %}
         <form method="post" action="/admin/batch/{{ batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente la galleria \'{{ batch.name }}\' con tutte le foto? {% if batch.published %}È già pubblicata e visibile al cliente. {% endif %}Non è reversibile.');">

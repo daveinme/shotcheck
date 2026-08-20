@@ -1,5 +1,6 @@
 import io
 import json
+import secrets
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -112,15 +113,40 @@ async def delete_user(
 @router.post("/batches")
 async def create_batch(
     name: str = Form(...),
-    brand_id: int = Form(...),
+    brand_id: int | None = Form(None),
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
+    name = name.strip()
+    if not brand_id:
+        # galleria pubblica: nessun brand, link diretto senza login
+        batch = Batch(name=name, brand_id=None, public_token=secrets.token_urlsafe(16), published=True)
+        db.add(batch)
+        db.commit()
+        return RedirectResponse(url=f"/admin/batch/{batch.id}", status_code=303)
+
     brand = db.query(Brand).filter(Brand.id == brand_id).first()
     if not brand:
         raise HTTPException(400, "Brand non trovato")
-    batch = Batch(name=name.strip(), brand_id=brand.id)
+    batch = Batch(name=name, brand_id=brand.id)
     db.add(batch)
     db.commit()
+    return RedirectResponse(url=f"/admin/batch/{batch.id}", status_code=303)
+
+
+@router.post("/batch/{batch_id}/make-public")
+async def make_batch_public(
+    batch_id: int,
+    db: Session = Depends(get_db), staff: User = Depends(require_staff),
+):
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(404, "Batch non trovato")
+    if batch.brand_id is not None:
+        raise HTTPException(400, "Solo le gallerie senza brand possono avere un link pubblico")
+    if not batch.public_token:
+        batch.public_token = secrets.token_urlsafe(16)
+        batch.published = True
+        db.commit()
     return RedirectResponse(url=f"/admin/batch/{batch.id}", status_code=303)
 
 
