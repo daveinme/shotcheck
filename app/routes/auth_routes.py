@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import (
     verify_password, hash_password, create_session_token, get_current_user,
-    read_invite_token, SESSION_COOKIE, SESSION_MAX_AGE,
+    SESSION_COOKIE, SESSION_MAX_AGE,
 )
 from app.db import get_db
 from app.models import User, UserRole
@@ -57,53 +57,54 @@ async def logout():
     return resp
 
 
-def _resolve_invite(token: str, db: Session) -> User | None:
-    user_id = read_invite_token(token)
-    if not user_id:
-        return None
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user or user.password_hash:
-        return None  # invito scaduto/non valido, o account già attivato
-    return user
-
-
-@router.get("/invite/{token}", response_class=HTMLResponse)
-async def invite_page(token: str, request: Request, db: Session = Depends(get_db)):
-    user = _resolve_invite(token, db)
-    if not user:
-        return templates.TemplateResponse(
-            "invite.html",
-            {"request": request, "user": None, "token": token, "error": None},
-            status_code=400,
-        )
+@router.get("/activate", response_class=HTMLResponse)
+async def activate_page(request: Request):
     return templates.TemplateResponse(
-        "invite.html", {"request": request, "user": user, "token": token, "error": None},
+        "activate.html", {"request": request, "user_email": None, "error": None},
     )
 
 
-@router.post("/invite/{token}")
-async def invite_submit(
-    token: str, request: Request,
-    password: str = Form(...), password_confirm: str = Form(...),
+@router.post("/activate")
+async def activate_find_account(request: Request, email: str = Form(...), db: Session = Depends(get_db)):
+    email = email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if not user or user.password_hash:
+        return templates.TemplateResponse(
+            "activate.html",
+            {"request": request, "user_email": None,
+             "error": "Nessun account da attivare trovato per questa email. Contatta lo studio."},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "activate.html", {"request": request, "user_email": user.email, "error": None},
+    )
+
+
+@router.post("/activate/set-password")
+async def activate_set_password(
+    request: Request,
+    email: str = Form(...), password: str = Form(...), password_confirm: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    user = _resolve_invite(token, db)
-    if not user:
+    email = email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if not user or user.password_hash:
         return templates.TemplateResponse(
-            "invite.html",
-            {"request": request, "user": None, "token": token, "error": None},
+            "activate.html",
+            {"request": request, "user_email": None,
+             "error": "Nessun account da attivare trovato per questa email. Contatta lo studio."},
             status_code=400,
         )
     if len(password) < 8:
         return templates.TemplateResponse(
-            "invite.html",
-            {"request": request, "user": user, "token": token, "error": "La password deve avere almeno 8 caratteri"},
+            "activate.html",
+            {"request": request, "user_email": user.email, "error": "La password deve avere almeno 8 caratteri"},
             status_code=400,
         )
     if password != password_confirm:
         return templates.TemplateResponse(
-            "invite.html",
-            {"request": request, "user": user, "token": token, "error": "Le password non coincidono"},
+            "activate.html",
+            {"request": request, "user_email": user.email, "error": "Le password non coincidono"},
             status_code=400,
         )
 

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Bozze — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand"><a href="/admin">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    {% include "_notif_widget.html" %}
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+  <nav class="breadcrumb">
+    <a href="/admin">{{ app_name }}</a>
+    <span class="sep">/</span>
+    <span class="current">Bozze</span>
+  </nav>
+
+  <h1>Bozze da lavorare</h1>
+  <p class="hint" style="margin-top:-10px; margin-bottom:20px;">
+    Ordinate per priorità: i lotti con una sottocartella urgente sono in cima.
+  </p>
+
+  {% if not raw_batches %}
+  <div class="panel hint">Nessuna bozza in coda al momento.</div>
+  {% endif %}
+
+  {% for rb in raw_batches %}
+  <div class="panel {% if rb.has_high_priority %}panel-urgent{% endif %}">
+    <div class="row" style="justify-content: space-between;">
+      <div>
+        <div class="row" style="gap:8px;">
+          <a href="/admin/raw-batches/{{ rb.id }}" class="sku" style="font-size:16px;">{{ rb.name }}</a>
+          {% if rb.has_high_priority %}<span class="badge badge-rejected">Urgente</span>{% endif %}
+        </div>
+        <div class="hint">{{ rb.brand.name }} · {{ rb.uploads|length }} file · caricato il {{ rb.uploaded_at.strftime("%d/%m/%Y") }} da {{ rb.uploaded_by.name }}</div>
+      </div>
+      <div class="row">
+        <a href="/admin/raw-batches/{{ rb.id }}" class="btn-link">Apri</a>
+        <a href="/admin/raw-batches/{{ rb.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
+        <form method="post" action="/admin/raw-batches/{{ rb.id }}/status">
+          <select name="status" onchange="this.form.submit()">
+            <option value="queued" {% if rb.status.value == "queued" %}selected{% endif %}>In coda</option>
+            <option value="processing" {% if rb.status.value == "processing" %}selected{% endif %}>In lavorazione</option>
+            <option value="published" {% if rb.status.value == "published" %}selected{% endif %}>Pubblicato</option>
+          </select>
+        </form>
+        <form method="post" action="/admin/raw-batches/{{ rb.id }}/delete" onsubmit="return confirm('Eliminare definitivamente il lotto \'{{ rb.name }}\' e tutti i {{ rb.uploads|length }} file? Non è reversibile.');">
+          <button type="submit" class="danger">Elimina</button>
+        </form>
+      </div>
+    </div>
+
+    {% if rb.folders %}
+    <div style="margin-top:10px;">
+      {% for f in rb.folders|sort(attribute="name") %}
+      <div class="row" style="justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--border);">
+        <span>
+          {{ f.name }} <span class="hint">({{ f.uploads|length }} file)</span>
+          {% if f.priority.value == "high" %}<span class="badge badge-rejected">Priorità alta</span>{% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

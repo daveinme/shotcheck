@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ batch.name }} — {{ app_name }}{% endblock %}
 {% block body %}
+<div id="page-drop-overlay" class="page-drop-overlay" hidden>
+  <div class="page-drop-overlay-inner">
+    <p>Rilascia qui le foto per caricarle in questa cartella</p>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="brand"><a href="/admin">{{ app_name }}</a></div>
   <div class="row">
     <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    {% include "_notif_widget.html" %}
     <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
   </div>
 </div>
@@ -21,7 +28,7 @@
     <div class="row" style="justify-content: space-between;">
       <div>
         <h1 style="margin-bottom:4px;">{{ batch.name }}</h1>
-        <div class="hint">{{ batch.brand.name }} · {{ photos|length }} foto</div>
+        <div class="hint">{{ batch.brand.name }} · {{ batch.photos|length }} foto in totale</div>
       </div>
       <div class="row">
         <a href="/admin/batch/{{ batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
@@ -33,51 +40,619 @@
             <button type="submit">Invita cliente</button>
           </form>
         {% endif %}
+        {% if staff.role.value == "superadmin" %}
+        <form method="post" action="/admin/batch/{{ batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente la galleria \'{{ batch.name }}\' con tutte le foto? {% if batch.published %}È già pubblicata e visibile al cliente. {% endif %}Non è reversibile.');">
+          <button type="submit" class="danger">Elimina galleria</button>
+        </form>
+        {% endif %}
       </div>
     </div>
   </div>
 
   <div class="panel">
-    <h2>Carica foto</h2>
-    <form method="post" action="/admin/batch/{{ batch.id }}/upload" enctype="multipart/form-data" class="row">
-      <input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.webp" required style="flex:1;">
-      <button type="submit">Carica</button>
-    </form>
-    <div class="hint" style="margin-top:8px;">
-      Il nome del file (senza estensione) identifica il capo. Ricaricando un file con lo stesso nome crei una nuova versione (V2, V3...) mantenendo lo storico.
-    </div>
+    <h2 id="notes-panel-title" style="display:inline;">Note generali</h2>
+    <button type="button" class="tip-toggle" aria-controls="tip-notes" aria-label="Come funzionano le note">i</button>
+    <div id="tip-notes" class="tip-body">Le note qui riguardano solo la cartella che stai guardando: cambiano se entri in una sottocartella. Le note sulla singola foto invece si vedono aprendo il dettaglio della foto.</div>
+    <div id="notes-panel-list" class="notes-list"></div>
+    <button type="button" id="open-note-modal-btn" class="secondary" style="margin-top:10px;">Scrivi una nota</button>
   </div>
 
-  <div class="photo-grid">
-    {% for p in photos %}
-    <div class="photo-card">
-      <img src="/files/version/{{ p.latest_version.id }}" alt="{{ p.sku }}">
-      <div class="body">
-        <div class="sku">{{ p.sku }}</div>
-        <div class="row" style="justify-content: space-between;">
-          <span>
-            {% if p.versions|length > 1 %}<span class="badge badge-role">V{{ p.latest_version.version_num }}</span>{% endif %}
-            {% if p.status.value == "approved" %}<span class="badge badge-approved">Approvata</span>
-            {% elif p.status.value == "rejected" %}<span class="badge badge-rejected">Da correggere</span>
-            {% else %}<span class="badge badge-pending">In attesa</span>{% endif %}
-          </span>
-        </div>
-        {% if p.notes %}
-        <div class="notes-list">
-          {% for n in p.notes[-3:] %}
-          <div class="note"><b>{{ n.author.name }}:</b> {{ n.body }}</div>
-          {% endfor %}
-        </div>
-        {% endif %}
-        <div class="actions">
-          <form method="post" action="/admin/batch/{{ batch.id }}/photo/{{ p.id }}/delete" onsubmit="return confirm('Eliminare {{ p.sku }} e tutte le versioni?')" style="flex:1;">
-            <button type="submit" class="danger" style="width:100%;">Elimina</button>
-          </form>
-        </div>
+  <div class="panel">
+    <div class="filebrowser-toolbar">
+      <nav id="fb-breadcrumb" class="fb-breadcrumb"></nav>
+      <div class="row">
+        <button type="button" id="new-folder-btn" class="secondary">Nuova cartella</button>
+        <button type="button" id="upload-btn">Carica foto qui</button>
+        <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp" hidden>
       </div>
     </div>
-    {% endfor %}
+    <div class="hint" style="margin-bottom:14px;">Trascina i file ovunque sulla pagina per caricarli qui. Trascina una foto su una cartella per spostarcela.</div>
+
+    <div id="fb-folders" class="fb-grid fb-folders-row"></div>
+
+    <div id="fb-rejected-section" hidden>
+      <h3 class="fb-section-title fb-section-title-rejected" style="display:inline;">Da correggere</h3>
+      <button type="button" class="tip-toggle" aria-controls="tip-rejected" aria-label="Cosa fare con queste foto">i</button>
+      <div id="tip-rejected" class="tip-body">Il cliente ha segnato queste foto come da correggere e lasciato una nota nel dettaglio. Aprile, leggi la nota, poi usa "Sostituisci foto" per caricare la versione corretta.</div>
+      <div id="fb-rejected" class="fb-grid" style="margin-top:10px; margin-bottom:20px;"></div>
+    </div>
+
+    <div id="fb-items" class="fb-grid"></div>
   </div>
 
 </div>
+
+<div id="note-modal" class="modal-overlay" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="row" style="justify-content: space-between; margin-bottom:14px;">
+      <h2 style="margin:0;">Nota generale</h2>
+      <button type="button" id="close-note-modal-btn" class="detail-close" style="position:static;" aria-label="Chiudi">&times;</button>
+    </div>
+    <form id="batch-note-form">
+      <textarea name="body" class="field modal-textarea" placeholder="Lascia una nota per questa cartella..." autofocus></textarea>
+      <button type="submit" class="secondary" style="margin-top:10px;">Invia nota</button>
+    </form>
+  </div>
+</div>
+
+<div id="detail-panel" class="detail-overlay" hidden>
+  <div class="detail-backdrop"></div>
+  <div class="detail-box">
+    <button type="button" id="detail-close" class="detail-close" aria-label="Chiudi">&times;</button>
+    <button type="button" id="detail-prev" class="detail-nav detail-prev" aria-label="Precedente">&#8249;</button>
+    <button type="button" id="detail-next" class="detail-nav detail-next" aria-label="Successiva">&#8250;</button>
+
+    <div class="detail-image-wrap">
+      <img id="detail-img" src="" alt="">
+    </div>
+    <div class="detail-sidebar">
+      <div class="sku" id="detail-sku" style="font-size:16px;"></div>
+      <div id="detail-status-badge"></div>
+
+      <div class="actions" style="margin-top:14px;">
+        <button type="button" id="detail-replace-btn" style="flex:1;">Sostituisci foto</button>
+        <button type="button" id="detail-delete-btn" class="danger" style="flex:1;">Elimina</button>
+      </div>
+
+      <div id="detail-notes" class="notes-list" style="margin-top:14px;"></div>
+
+      <form id="detail-note-form" style="margin-top:10px;">
+        <textarea name="body" class="field" rows="2" placeholder="Lascia una nota..." style="resize:vertical;"></textarea>
+        <button type="submit" class="secondary" style="margin-top:6px; width:100%;">Invia nota</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="upload-queue-panel" class="upload-queue-panel" hidden>
+  <div class="upload-queue-header">
+    <span id="upload-queue-title">Caricamento…</span>
+    <button type="button" id="upload-queue-toggle" class="upload-queue-toggle" aria-label="Comprimi">–</button>
+  </div>
+  <div id="upload-queue-list" class="upload-queue-list"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+  const BATCH_ID = {{ batch.id }};
+  const CURRENT_USER_ID = {{ staff.id }};
+  const batchNameEsc = {{ batch.name|tojson }};
+  const allFolders = {{ all_folders_json|safe }};
+  const rootPhotos = {{ root_photos_json|safe }};
+
+  const rootNotes = {{ root_notes_json|safe }};
+
+  const photoCache = { root: rootPhotos }; // folderKey -> array foto
+  const noteCache = { root: rootNotes };
+  let currentFolderId = null; // null = root
+  let currentList = rootPhotos; // lista foto attualmente mostrata (rejected + altre), per il prev/next del dettaglio
+  let detailIndex = 0;
+
+  function folderKey(id) { return id === null ? "root" : String(id); }
+  function childrenOf(parentId) { return allFolders.filter((f) => f.parent_id === parentId).sort((a, b) => a.name.localeCompare(b.name)); }
+  function folderById(id) { return allFolders.find((f) => f.id === id); }
+
+  function breadcrumbTrail(folderId) {
+    const trail = [];
+    let f = folderById(folderId);
+    while (f) { trail.unshift(f); f = folderById(f.parent_id); }
+    return trail;
+  }
+
+  async function ensureFolderData(folderId) {
+    const key = folderKey(folderId);
+    if (photoCache[key] && noteCache[key]) return;
+    const url = folderId === null
+      ? `/admin/batch/${BATCH_ID}/root/contents`
+      : `/admin/batch/${BATCH_ID}/folder/${folderId}/contents`;
+    const res = await fetch(url);
+    const data = await res.json();
+    photoCache[key] = data.photos;
+    noteCache[key] = data.notes;
+  }
+
+  async function fetchPhotos(folderId) {
+    await ensureFolderData(folderId);
+    return photoCache[folderKey(folderId)];
+  }
+
+  async function fetchNotes(folderId) {
+    await ensureFolderData(folderId);
+    return noteCache[folderKey(folderId)];
+  }
+
+  function invalidate(folderId) {
+    delete photoCache[folderKey(folderId)];
+    delete noteCache[folderKey(folderId)];
+  }
+
+  function statusBadge(status) {
+    if (status === "approved") return '<span class="badge badge-approved">Approvata</span>';
+    if (status === "rejected") return '<span class="badge badge-rejected">Da correggere</span>';
+    return '<span class="badge badge-pending">In attesa</span>';
+  }
+
+  function folderTileHTML(f) {
+    return `
+      <div class="fb-tile fb-tile-folder" data-folder-id="${f.id}">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+        <span class="fb-tile-name">${f.name}</span>
+        <button type="button" class="fb-tile-delete delete-folder-btn" data-folder-id="${f.id}" aria-label="Elimina cartella">&times;</button>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function noteHTML(n) {
+    const deleteBtn = n.author_id === CURRENT_USER_ID
+      ? `<button type="button" class="note-delete-btn" data-note-id="${n.id}" aria-label="Elimina nota">&times;</button>`
+      : "";
+    return `<div class="note">${deleteBtn}<b>${escapeHtml(n.author)}:</b> <span class="note-body">${escapeHtml(n.body)}</span></div>`;
+  }
+
+  function photoTileHTML(p, index) {
+    const versionBadge = p.version_num > 1 ? `<span class="badge badge-role">V${p.version_num}</span>` : "";
+    const previewNotes = p.notes.slice(-3);
+    const notesHTML = previewNotes.length
+      ? `<div class="notes-list">${previewNotes.map(noteHTML).join("")}</div>`
+      : "";
+    return `
+      <div class="photo-card" draggable="true" data-photo-id="${p.id}" data-photo-index="${index}">
+        <img src="/files/version/${p.version_id}" alt="${p.sku}">
+        <div class="body">
+          <div class="sku">${p.sku}</div>
+          <div class="row" style="justify-content: space-between;">${versionBadge}${statusBadge(p.status)}</div>
+          ${notesHTML}
+          <div class="actions">
+            <button type="button" class="secondary replace-photo-btn" style="flex:1;" data-photo-id="${p.id}">Sostituisci</button>
+            <button type="button" class="danger delete-photo-btn" style="flex:1;" data-photo-id="${p.id}" data-sku="${p.sku}">Elimina</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderBreadcrumb() {
+    const nav = document.getElementById("fb-breadcrumb");
+    const trail = breadcrumbTrail(currentFolderId);
+    let html = `<a href="#" data-folder-id="">${batchNameEsc}</a>`;
+    for (const f of trail) {
+      html += ` <span class="sep">/</span> <a href="#" data-folder-id="${f.id}">${f.name}</a>`;
+    }
+    nav.innerHTML = html;
+    nav.querySelectorAll("a").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        openFolder(a.dataset.folderId ? Number(a.dataset.folderId) : null);
+      });
+    });
+  }
+
+  async function render() {
+    renderBreadcrumb();
+    const foldersGrid = document.getElementById("fb-folders");
+    const itemsGrid = document.getElementById("fb-items");
+    const subfolders = childrenOf(currentFolderId);
+    const photos = await fetchPhotos(currentFolderId);
+
+    foldersGrid.innerHTML = subfolders.map(folderTileHTML).join("");
+
+    const rejectedPhotos = photos.filter((p) => p.status === "rejected");
+    const otherPhotos = photos.filter((p) => p.status !== "rejected");
+    currentList = rejectedPhotos.concat(otherPhotos);
+
+    const rejectedSection = document.getElementById("fb-rejected-section");
+    rejectedSection.hidden = rejectedPhotos.length === 0;
+    document.getElementById("fb-rejected").innerHTML = rejectedPhotos.map((p, i) => photoTileHTML(p, i)).join("");
+
+    if (otherPhotos.length === 0) {
+      itemsGrid.innerHTML = (subfolders.length === 0 && rejectedPhotos.length === 0)
+        ? '<div class="hint" style="padding:20px 0;">Cartella vuota. Trascina qui delle foto o crea una sottocartella.</div>'
+        : "";
+    } else {
+      itemsGrid.innerHTML = otherPhotos.map((p, i) => photoTileHTML(p, rejectedPhotos.length + i)).join("");
+    }
+    wireGridHandlers();
+
+    const folder = folderById(currentFolderId);
+    document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";
+    const notes = await fetchNotes(currentFolderId);
+    renderNotesPanel(notes);
+  }
+
+  function renderNotesPanel(notes) {
+    const list = document.getElementById("notes-panel-list");
+    list.innerHTML = notes.map(noteHTML).join("");
+    list.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+  }
+
+  function openFolder(folderId) {
+    currentFolderId = folderId;
+    render();
+  }
+
+  function wireGridHandlers() {
+    document.querySelectorAll(".fb-tile-folder").forEach((tile) => {
+      tile.addEventListener("click", (e) => {
+        if (e.target.closest(".delete-folder-btn")) return;
+        openFolder(Number(tile.dataset.folderId));
+      });
+      tile.addEventListener("dragover", (e) => { e.preventDefault(); tile.classList.add("fb-tile-drop-active"); });
+      tile.addEventListener("dragleave", () => tile.classList.remove("fb-tile-drop-active"));
+      tile.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        tile.classList.remove("fb-tile-drop-active");
+        const photoId = e.dataTransfer.getData("text/photo-id");
+        if (!photoId) return;
+        const targetFolderId = Number(tile.dataset.folderId);
+        await movePhoto(photoId, targetFolderId);
+        invalidate(currentFolderId);
+        invalidate(targetFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".delete-folder-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const folderId = btn.dataset.folderId;
+        const summaryRes = await fetch(`/admin/batch/${BATCH_ID}/folders/${folderId}/summary`);
+        const summary = await summaryRes.json();
+
+        let message = "Eliminare questa cartella?";
+        if (summary.subfolder_count > 0 || summary.photo_count > 0) {
+          const parts = [];
+          if (summary.subfolder_count > 0) parts.push(`${summary.subfolder_count} sottocartelle`);
+          if (summary.photo_count > 0) parts.push(`${summary.photo_count} foto`);
+          message = `Questa cartella contiene ${parts.join(" e ")}. Eliminandola perderai tutto il contenuto in modo definitivo. Continuare?`;
+        }
+        if (!confirm(message)) return;
+
+        const res = await fetch(`/admin/batch/${BATCH_ID}/folders/${folderId}/delete`, { method: "POST" });
+        if (!res.ok) {
+          alert("Errore durante l'eliminazione. Riprova.");
+          return;
+        }
+        const idx = allFolders.findIndex((f) => f.id === Number(folderId));
+        if (idx >= 0) allFolders.splice(idx, 1);
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".delete-photo-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Eliminare ${btn.dataset.sku} e tutte le versioni?`)) return;
+        await fetch(`/admin/batch/${BATCH_ID}/photo/${btn.dataset.photoId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".replace-photo-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".jpg,.jpeg,.png,.webp";
+        input.addEventListener("change", async () => {
+          if (!input.files.length) return;
+          const fd = new FormData();
+          fd.append("file", input.files[0]);
+          btn.disabled = true;
+          btn.textContent = "Caricamento…";
+          await fetch(`/admin/batch/${BATCH_ID}/photo/${btn.dataset.photoId}/replace`, { method: "POST", body: fd });
+          invalidate(currentFolderId);
+          render();
+        });
+        input.click();
+      });
+    });
+
+    document.querySelectorAll(".photo-card[draggable]").forEach((card) => {
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/photo-id", card.dataset.photoId);
+      });
+      card.addEventListener("click", (e) => {
+        if (e.target.closest(".actions") || e.target.closest(".notes-list")) return;
+        openDetail(Number(card.dataset.photoIndex));
+      });
+    });
+
+    document.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+  }
+
+  async function movePhoto(photoId, folderId) {
+    const fd = new FormData();
+    if (folderId !== null) fd.append("folder_id", folderId);
+    await fetch(`/admin/batch/${BATCH_ID}/photos/${photoId}/move`, { method: "POST", body: fd });
+  }
+
+  // ── Pannello dettaglio foto — immagine grande, tutte le note, prev/next ──
+  const detailPanel = document.getElementById("detail-panel");
+  const detailImg = document.getElementById("detail-img");
+  const detailSku = document.getElementById("detail-sku");
+  const detailBadge = document.getElementById("detail-status-badge");
+  const detailNotes = document.getElementById("detail-notes");
+  const detailNoteForm = document.getElementById("detail-note-form");
+
+  function renderDetail() {
+    const p = currentList[detailIndex];
+    detailImg.src = `/files/version/${p.version_id}`;
+    detailSku.textContent = p.sku;
+    detailBadge.innerHTML = statusBadge(p.status);
+    detailNoteForm.body.value = "";
+    detailNotes.innerHTML = p.notes.map(noteHTML).join("");
+    detailNotes.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        p.notes = p.notes.filter((n) => n.id !== Number(btn.dataset.noteId));
+        renderDetail();
+      });
+    });
+  }
+
+  function openDetail(index) {
+    detailIndex = index;
+    renderDetail();
+    detailPanel.hidden = false;
+  }
+
+  function closeDetail() {
+    detailPanel.hidden = true;
+    detailImg.src = "";
+  }
+
+  function shiftDetail(delta) {
+    if (currentList.length === 0) return;
+    detailIndex = (detailIndex + delta + currentList.length) % currentList.length;
+    renderDetail();
+  }
+
+  document.getElementById("detail-close").addEventListener("click", closeDetail);
+  document.getElementById("detail-prev").addEventListener("click", () => shiftDetail(-1));
+  document.getElementById("detail-next").addEventListener("click", () => shiftDetail(1));
+  detailPanel.querySelector(".detail-backdrop").addEventListener("click", closeDetail);
+
+  document.addEventListener("keydown", (e) => {
+    if (detailPanel.hidden) return;
+    if (e.key === "Escape") closeDetail();
+    if (e.key === "ArrowLeft") shiftDetail(-1);
+    if (e.key === "ArrowRight") shiftDetail(1);
+  });
+
+  document.getElementById("detail-replace-btn").addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".jpg,.jpeg,.png,.webp";
+    input.addEventListener("change", async () => {
+      if (!input.files.length) return;
+      const p = currentList[detailIndex];
+      const fd = new FormData();
+      fd.append("file", input.files[0]);
+      const res = await fetch(`/admin/batch/${BATCH_ID}/photo/${p.id}/replace`, { method: "POST", body: fd });
+      const updated = await res.json();
+      Object.assign(p, updated);
+      renderDetail();
+      invalidate(currentFolderId);
+      render();
+    });
+    input.click();
+  });
+
+  document.getElementById("detail-delete-btn").addEventListener("click", async () => {
+    const p = currentList[detailIndex];
+    if (!confirm(`Eliminare ${p.sku} e tutte le versioni?`)) return;
+    await fetch(`/admin/batch/${BATCH_ID}/photo/${p.id}/delete`, { method: "POST" });
+    closeDetail();
+    invalidate(currentFolderId);
+    render();
+  });
+
+  detailNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = detailNoteForm.body.value.trim();
+    if (!body) return;
+    const p = currentList[detailIndex];
+    const fd = new FormData();
+    fd.append("body", body);
+    const res = await fetch(`/batch/${BATCH_ID}/photo/${p.id}/notes`, { method: "POST", body: fd });
+    const note = await res.json();
+    p.notes.push(note);
+    renderDetail();
+  });
+
+  // ── Nuova cartella nella posizione corrente ──────────────────────────────
+  document.getElementById("new-folder-btn").addEventListener("click", async () => {
+    const name = prompt("Nome della nuova cartella:");
+    if (!name || !name.trim()) return;
+    const fd = new FormData();
+    fd.append("name", name.trim());
+    if (currentFolderId !== null) fd.append("parent_id", currentFolderId);
+    const res = await fetch(`/admin/batch/${BATCH_ID}/folders`, { method: "POST", body: fd });
+    const folder = await res.json();
+    allFolders.push(folder);
+    render();
+  });
+
+  // ── Upload diretto nella cartella corrente (nessun pannello intermedio) ─
+  const fileInput = document.getElementById("file-input");
+  document.getElementById("upload-btn").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const files = Array.from(fileInput.files).filter((f) => /\.(jpe?g|png|webp)$/i.test(f.name));
+    fileInput.value = "";
+    if (files.length) enqueueFiles(files, currentFolderId);
+  });
+
+  const pageOverlay = document.getElementById("page-drop-overlay");
+  let dragCounter = 0;
+  document.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragCounter++;
+    pageOverlay.hidden = false;
+  });
+  document.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  });
+  document.addEventListener("dragleave", () => {
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; pageOverlay.hidden = true; }
+  });
+  window.addEventListener("dragleave", (e) => {
+    if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+      dragCounter = 0;
+      pageOverlay.hidden = true;
+    }
+  });
+  document.addEventListener("drop", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return; // lascia passare il drop di una photo-card sulle cartelle
+    e.preventDefault();
+    dragCounter = 0;
+    pageOverlay.hidden = true;
+    const files = Array.from(e.dataTransfer.files).filter((f) => /\.(jpe?g|png|webp)$/i.test(f.name));
+    if (files.length) enqueueFiles(files, currentFolderId);
+  });
+
+  // ── Coda di upload in background ─────────────────────────────────────────
+  const queuePanel = document.getElementById("upload-queue-panel");
+  const queueTitle = document.getElementById("upload-queue-title");
+  const queueList = document.getElementById("upload-queue-list");
+  document.getElementById("upload-queue-toggle").addEventListener("click", () => {
+    const collapsed = queueList.style.display === "none";
+    queueList.style.display = collapsed ? "" : "none";
+    document.getElementById("upload-queue-toggle").textContent = collapsed ? "–" : "+";
+  });
+
+  function uploadOneFile(file, folderId) {
+    return new Promise((resolve) => {
+      const row = document.createElement("div");
+      row.className = "upload-queue-row";
+      row.innerHTML = `<span class="upload-queue-name">${file.name}</span><span class="upload-queue-pct">0%</span>`;
+      queueList.appendChild(row);
+      const pctEl = row.querySelector(".upload-queue-pct");
+
+      const fd = new FormData();
+      fd.append("files", file);
+      if (folderId) fd.append("folder_id", folderId);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/admin/batch/${BATCH_ID}/upload`);
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (!ev.lengthComputable) return;
+        pctEl.textContent = Math.round((ev.loaded / ev.total) * 100) + "%";
+      });
+      xhr.addEventListener("loadend", () => {
+        row.classList.add(xhr.status >= 200 && xhr.status < 400 ? "upload-queue-done" : "upload-queue-failed");
+        pctEl.textContent = xhr.status >= 200 && xhr.status < 400 ? "✓" : "Errore";
+        resolve();
+      });
+      xhr.send(fd);
+    });
+  }
+
+  // Coda unica per l'intera pagina: se un upload è già in corso, i nuovi
+  // file si accodano invece di avviare una seconda scrittura in parallelo
+  // (SQLite non tollera due INSERT concorrenti -> "database is locked").
+  const uploadQueue = [];
+  const touchedFolders = new Set();
+  let queueRunning = false;
+
+  function enqueueFiles(files, folderId) {
+    for (const file of files) uploadQueue.push({ file, folderId });
+    touchedFolders.add(folderKey(folderId));
+    if (!queueRunning) runQueue();
+  }
+
+  async function runQueue() {
+    queueRunning = true;
+    queuePanel.hidden = false;
+    queueList.style.display = "";
+    document.getElementById("upload-queue-toggle").textContent = "–";
+
+    let done = 0;
+    while (uploadQueue.length > 0) {
+      const total = done + uploadQueue.length;
+      queueTitle.textContent = `Caricamento ${done}/${total}`;
+      const { file, folderId } = uploadQueue.shift();
+      await uploadOneFile(file, folderId);
+      done++;
+    }
+    queueTitle.textContent = `Completato: ${done} file`;
+    queueRunning = false;
+
+    for (const key of touchedFolders) delete photoCache[key];
+    touchedFolders.clear();
+    render();
+  }
+
+  // ── Modal "nota generale" — legata alla cartella corrente ────────────────
+  const noteModal = document.getElementById("note-modal");
+  const openNoteModalBtn = document.getElementById("open-note-modal-btn");
+  const closeNoteModalBtn = document.getElementById("close-note-modal-btn");
+  const batchNoteForm = document.getElementById("batch-note-form");
+
+  openNoteModalBtn.addEventListener("click", () => { noteModal.hidden = false; noteModal.querySelector("textarea").focus(); });
+  closeNoteModalBtn.addEventListener("click", () => noteModal.hidden = true);
+  noteModal.querySelector(".modal-backdrop").addEventListener("click", () => noteModal.hidden = true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !noteModal.hidden) noteModal.hidden = true; });
+
+  batchNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = batchNoteForm.body.value.trim();
+    if (!body) return;
+    const fd = new FormData();
+    fd.append("body", body);
+    if (currentFolderId !== null) fd.append("folder_id", currentFolderId);
+    await fetch(`/batch/${BATCH_ID}/notes`, { method: "POST", body: fd });
+    batchNoteForm.body.value = "";
+    noteModal.hidden = true;
+    invalidate(currentFolderId);
+    render();
+  });
+
+  render();
+})();
+</script>
 {% endblock %}

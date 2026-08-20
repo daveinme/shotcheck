@@ -5,6 +5,7 @@
   <div class="brand"><a href="/client">{{ app_name }}</a></div>
   <div class="row">
     <span class="who">{{ user.name }}</span>
+    {% include "_notif_widget.html" %}
     <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
   </div>
 </div>
@@ -26,99 +27,358 @@
     </div>
   </div>
 
-  <div class="photo-grid">
-    {% for p in photos %}
-    <div class="photo-card">
-      <img src="/files/version/{{ p.latest_version.id }}" alt="{{ p.sku }}" class="lightbox-trigger" data-index="{{ loop.index0 }}">
-      <div class="body">
-        <div class="sku">{{ p.sku }}</div>
-        <div class="row" style="justify-content: space-between;">
-          {% if p.versions|length > 1 %}<span class="badge badge-role">V{{ p.latest_version.version_num }}</span>{% endif %}
-          {% if p.status.value == "approved" %}<span class="badge badge-approved">Approvata</span>
-          {% elif p.status.value == "rejected" %}<span class="badge badge-rejected">Da correggere</span>
-          {% else %}<span class="badge badge-pending">In attesa</span>{% endif %}
-        </div>
+  <div class="panel">
+    <h2 id="notes-panel-title" style="display:inline;">Note generali</h2>
+    <button type="button" class="tip-toggle" aria-controls="tip-notes" aria-label="Come funzionano le note">i</button>
+    <div id="tip-notes" class="tip-body">Le note qui riguardano solo la cartella che stai guardando. Se entri in una sottocartella, vedrai (e potrai scrivere) note diverse — non si mescolano.</div>
+    <div id="notes-panel-list" class="notes-list"></div>
+    <button type="button" id="open-note-modal-btn" class="secondary" style="margin-top:10px;">Scrivi una nota</button>
+  </div>
 
-        <div class="actions">
-          <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/status" style="flex:1;">
-            <input type="hidden" name="status" value="approved">
-            <button type="submit" style="width:100%; background: var(--ok);">Approva</button>
-          </form>
-          <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/status" style="flex:1;">
-            <input type="hidden" name="status" value="rejected">
-            <button type="submit" class="danger" style="width:100%;">Da correggere</button>
-          </form>
-        </div>
-
-        {% if p.notes %}
-        <div class="notes-list">
-          {% for n in p.notes %}
-          <div class="note"><b>{{ n.author.name }}:</b> {{ n.body }}</div>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/notes" style="margin-top:8px;">
-          <textarea name="body" class="field" rows="2" placeholder="Lascia una nota..." style="resize:vertical;"></textarea>
-          <button type="submit" class="secondary" style="margin-top:6px; width:100%;">Invia nota</button>
-        </form>
-      </div>
-    </div>
-    {% endfor %}
+  <div class="panel">
+    <nav id="fb-breadcrumb" class="fb-breadcrumb" style="margin-bottom:14px;"></nav>
+    <div id="fb-folders" class="fb-grid-dense fb-folders-row"></div>
+    <div id="fb-items" class="fb-grid-dense"></div>
   </div>
 </div>
 
-<div id="lightbox" class="lightbox" hidden>
-  <button type="button" class="lightbox-close" aria-label="Chiudi">&times;</button>
-  <button type="button" class="lightbox-nav lightbox-prev" aria-label="Precedente">&#8249;</button>
-  <img id="lightbox-img" src="" alt="">
-  <button type="button" class="lightbox-nav lightbox-next" aria-label="Successiva">&#8250;</button>
-  <div class="lightbox-caption" id="lightbox-caption"></div>
+<div id="note-modal" class="modal-overlay" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="row" style="justify-content: space-between; margin-bottom:14px;">
+      <h2 style="margin:0;">Nota generale sul batch</h2>
+      <button type="button" id="close-note-modal-btn" class="detail-close" style="position:static;" aria-label="Chiudi">&times;</button>
+    </div>
+    <form id="batch-note-form">
+      <textarea name="body" class="field modal-textarea" placeholder="Lascia una nota per questa cartella..." autofocus></textarea>
+      <button type="submit" class="secondary" style="margin-top:10px;">Invia nota</button>
+    </form>
+  </div>
 </div>
+
+<div id="detail-panel" class="detail-overlay" hidden>
+  <div class="detail-backdrop"></div>
+  <div class="detail-box">
+    <button type="button" id="detail-close" class="detail-close" aria-label="Chiudi">&times;</button>
+    <button type="button" id="detail-prev" class="detail-nav detail-prev" aria-label="Precedente">&#8249;</button>
+    <button type="button" id="detail-next" class="detail-nav detail-next" aria-label="Successiva">&#8250;</button>
+
+    <div class="detail-image-wrap">
+      <img id="detail-img" src="" alt="">
+    </div>
+    <div class="detail-sidebar">
+      <div class="sku" id="detail-sku" style="font-size:16px;"></div>
+      <div id="detail-status-badge"></div>
+
+      <div class="actions" style="margin-top:14px;">
+        <button type="button" id="detail-approve-btn" style="flex:1; background: var(--ok);">Approva</button>
+        <button type="button" id="detail-reject-btn" class="danger" style="flex:1;">Da correggere</button>
+      </div>
+      <button type="button" class="tip-toggle" aria-controls="tip-reject" aria-label="Cos'è \"Da correggere\"">i</button>
+      <div id="tip-reject" class="tip-body">Se segni una foto "Da correggere" devi spiegare cosa non va: scrivi la nota qui sotto, poi premi di nuovo il bottone rosso per confermare.</div>
+
+      <div id="detail-notes" class="notes-list" style="margin-top:14px;"></div>
+
+      <form id="detail-note-form" style="margin-top:10px;">
+        <textarea name="body" class="field" rows="2" placeholder="Lascia una nota..." style="resize:vertical;"></textarea>
+        <button type="submit" class="secondary" style="margin-top:6px; width:100%;">Invia nota</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_body %}
 <script>
 (function () {
-  const sources = [{% for p in photos %}"/files/version/{{ p.latest_version.id }}"{% if not loop.last %},{% endif %}{% endfor %}];
-  const skus = [{% for p in photos %}{{ p.sku|tojson }}{% if not loop.last %},{% endif %}{% endfor %}];
-  const lightbox = document.getElementById("lightbox");
-  const img = document.getElementById("lightbox-img");
-  const caption = document.getElementById("lightbox-caption");
-  let current = 0;
+  const BATCH_ID = {{ batch.id }};
+  const CURRENT_USER_ID = {{ user.id }};
+  const batchNameEsc = {{ batch.name|tojson }};
+  const allFolders = {{ all_folders_json|safe }};
+  const rootPhotos = {{ root_photos_json|safe }};
+  const rootNotes = {{ root_notes_json|safe }};
 
-  function show(index) {
-    current = (index + sources.length) % sources.length;
-    img.src = sources[current];
-    caption.textContent = skus[current];
+  const photoCache = { root: rootPhotos };
+  const noteCache = { root: rootNotes };
+  let currentFolderId = null;
+  let currentList = rootPhotos; // lista foto attualmente mostrata, per il prev/next del dettaglio
+  let detailIndex = -1;
+
+  function folderKey(id) { return id === null ? "root" : String(id); }
+  function childrenOf(parentId) { return allFolders.filter((f) => f.parent_id === parentId).sort((a, b) => a.name.localeCompare(b.name)); }
+  function folderById(id) { return allFolders.find((f) => f.id === id); }
+
+  function breadcrumbTrail(folderId) {
+    const trail = [];
+    let f = folderById(folderId);
+    while (f) { trail.unshift(f); f = folderById(f.parent_id); }
+    return trail;
   }
 
-  function open(index) {
-    show(index);
-    lightbox.hidden = false;
+  async function ensureFolderData(folderId) {
+    const key = folderKey(folderId);
+    if (photoCache[key] && noteCache[key]) return;
+    const url = folderId === null
+      ? `/batch/${BATCH_ID}/root/contents`
+      : `/batch/${BATCH_ID}/folder/${folderId}/contents`;
+    const res = await fetch(url);
+    const data = await res.json();
+    photoCache[key] = data.photos;
+    noteCache[key] = data.notes;
   }
 
-  function close() {
-    lightbox.hidden = true;
-    img.src = "";
+  async function fetchPhotos(folderId) {
+    await ensureFolderData(folderId);
+    return photoCache[folderKey(folderId)];
   }
 
-  document.querySelectorAll(".lightbox-trigger").forEach((el) => {
-    el.style.cursor = "zoom-in";
-    el.addEventListener("click", () => open(parseInt(el.dataset.index, 10)));
-  });
+  async function fetchNotes(folderId) {
+    await ensureFolderData(folderId);
+    return noteCache[folderKey(folderId)];
+  }
 
-  lightbox.querySelector(".lightbox-close").addEventListener("click", close);
-  lightbox.querySelector(".lightbox-prev").addEventListener("click", () => show(current - 1));
-  lightbox.querySelector(".lightbox-next").addEventListener("click", () => show(current + 1));
-  lightbox.addEventListener("click", (e) => { if (e.target === lightbox) close(); });
+  function invalidate(folderId) {
+    delete photoCache[folderKey(folderId)];
+    delete noteCache[folderKey(folderId)];
+  }
+
+  function statusDotClass(status) {
+    if (status === "approved") return "fb-dot-ok";
+    if (status === "rejected") return "fb-dot-danger";
+    return "fb-dot-pending";
+  }
+
+  function folderTileHTML(f) {
+    return `
+      <div class="fb-tile-dense fb-tile-dense-folder" data-folder-id="${f.id}">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+        <span class="fb-tile-dense-name">${f.name}</span>
+      </div>`;
+  }
+
+  function photoTileHTML(p, index) {
+    const versionBadge = p.version_num > 1 ? `<span class="fb-tile-dense-version">V${p.version_num}</span>` : "";
+    return `
+      <div class="fb-tile-dense fb-tile-dense-photo" data-photo-index="${index}">
+        ${versionBadge}
+        <span class="fb-dot ${statusDotClass(p.status)}"></span>
+        <img src="/files/version/${p.version_id}" alt="${p.sku}">
+        <span class="fb-tile-dense-name">${p.sku}</span>
+      </div>`;
+  }
+
+  function renderBreadcrumb() {
+    const nav = document.getElementById("fb-breadcrumb");
+    const trail = breadcrumbTrail(currentFolderId);
+    let html = `<a href="#" data-folder-id="">${batchNameEsc}</a>`;
+    for (const f of trail) {
+      html += ` <span class="sep">/</span> <a href="#" data-folder-id="${f.id}">${f.name}</a>`;
+    }
+    nav.innerHTML = html;
+    nav.querySelectorAll("a").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        openFolder(a.dataset.folderId ? Number(a.dataset.folderId) : null);
+      });
+    });
+  }
+
+  async function render() {
+    renderBreadcrumb();
+    const foldersGrid = document.getElementById("fb-folders");
+    const itemsGrid = document.getElementById("fb-items");
+    const subfolders = childrenOf(currentFolderId);
+    const photos = await fetchPhotos(currentFolderId);
+    currentList = photos;
+
+    foldersGrid.innerHTML = subfolders.map(folderTileHTML).join("");
+    if (photos.length === 0) {
+      itemsGrid.innerHTML = subfolders.length === 0
+        ? '<div class="hint" style="padding:20px 0;">Nessuna foto qui.</div>'
+        : "";
+    } else {
+      itemsGrid.innerHTML = photos.map((p, i) => photoTileHTML(p, i)).join("");
+    }
+    wireGridHandlers();
+
+    const folder = folderById(currentFolderId);
+    document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";
+    const notes = await fetchNotes(currentFolderId);
+    renderNotesPanel(notes);
+  }
+
+  function renderNotesPanel(notes) {
+    const list = document.getElementById("notes-panel-list");
+    list.innerHTML = notes.map(noteHTML).join("");
+    list.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+  }
+
+  function openFolder(folderId) {
+    currentFolderId = folderId;
+    render();
+  }
+
+  function wireGridHandlers() {
+    document.querySelectorAll(".fb-tile-dense-folder").forEach((tile) => {
+      tile.addEventListener("click", () => openFolder(Number(tile.dataset.folderId)));
+    });
+    document.querySelectorAll(".fb-tile-dense-photo").forEach((tile) => {
+      tile.addEventListener("click", () => openDetail(Number(tile.dataset.photoIndex)));
+    });
+  }
+
+  // ── Pannello dettaglio (lightbox con azioni) ─────────────────────────────
+  const detailPanel = document.getElementById("detail-panel");
+  const detailImg = document.getElementById("detail-img");
+  const detailSku = document.getElementById("detail-sku");
+  const detailBadge = document.getElementById("detail-status-badge");
+  const detailNotes = document.getElementById("detail-notes");
+  const detailNoteForm = document.getElementById("detail-note-form");
+
+  function statusBadgeHTML(status) {
+    if (status === "approved") return '<span class="badge badge-approved">Approvata</span>';
+    if (status === "rejected") return '<span class="badge badge-rejected">Da correggere</span>';
+    return '<span class="badge badge-pending">In attesa</span>';
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function noteHTML(n) {
+    const deleteBtn = n.author_id === CURRENT_USER_ID
+      ? `<button type="button" class="note-delete-btn" data-note-id="${n.id}" aria-label="Elimina nota">&times;</button>`
+      : "";
+    return `<div class="note">${deleteBtn}<b>${escapeHtml(n.author)}:</b> <span class="note-body">${escapeHtml(n.body)}</span></div>`;
+  }
+
+  function renderDetail() {
+    const p = currentList[detailIndex];
+    detailImg.src = `/files/version/${p.version_id}`;
+    detailSku.textContent = p.sku;
+    detailBadge.innerHTML = statusBadgeHTML(p.status);
+    detailNoteForm.body.value = "";
+    detailNotes.innerHTML = p.notes.map(noteHTML).join("");
+    detailNotes.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        p.notes = p.notes.filter((n) => n.id !== Number(btn.dataset.noteId));
+        renderDetail();
+      });
+    });
+  }
+
+  function openDetail(index) {
+    detailIndex = index;
+    renderDetail();
+    detailPanel.hidden = false;
+  }
+
+  function closeDetail() {
+    detailPanel.hidden = true;
+    detailImg.src = "";
+  }
+
+  function shiftDetail(delta) {
+    if (currentList.length === 0) return;
+    detailIndex = (detailIndex + delta + currentList.length) % currentList.length;
+    renderDetail();
+  }
+
+  document.getElementById("detail-close").addEventListener("click", closeDetail);
+  document.getElementById("detail-prev").addEventListener("click", () => shiftDetail(-1));
+  document.getElementById("detail-next").addEventListener("click", () => shiftDetail(1));
+  detailPanel.querySelector(".detail-backdrop").addEventListener("click", closeDetail);
 
   document.addEventListener("keydown", (e) => {
-    if (lightbox.hidden) return;
-    if (e.key === "Escape") close();
-    if (e.key === "ArrowLeft") show(current - 1);
-    if (e.key === "ArrowRight") show(current + 1);
+    if (detailPanel.hidden) return;
+    if (e.key === "Escape") closeDetail();
+    if (e.key === "ArrowLeft") shiftDetail(-1);
+    if (e.key === "ArrowRight") shiftDetail(1);
   });
+
+  async function setStatus(status) {
+    const p = currentList[detailIndex];
+    const fd = new FormData();
+    fd.append("status", status);
+    await fetch(`/batch/${BATCH_ID}/photo/${p.id}/status`, { method: "POST", body: fd });
+    p.status = status;
+    renderDetail();
+    invalidate(currentFolderId);
+    render();
+  }
+
+  async function sendNote(body) {
+    const p = currentList[detailIndex];
+    const fd = new FormData();
+    fd.append("body", body);
+    const res = await fetch(`/batch/${BATCH_ID}/photo/${p.id}/notes`, { method: "POST", body: fd });
+    const note = await res.json();
+    p.notes.push(note);
+  }
+
+  document.getElementById("detail-approve-btn").addEventListener("click", () => setStatus("approved"));
+
+  document.getElementById("detail-reject-btn").addEventListener("click", async () => {
+    const body = detailNoteForm.body.value.trim();
+    if (!body) {
+      detailNoteForm.body.classList.add("field-required");
+      detailNoteForm.body.placeholder = "Spiega cosa correggere prima di continuare...";
+      detailNoteForm.body.focus();
+      return;
+    }
+    detailNoteForm.body.classList.remove("field-required");
+    await sendNote(body);
+    await setStatus("rejected");
+  });
+
+  detailNoteForm.body.addEventListener("input", () => {
+    detailNoteForm.body.classList.remove("field-required");
+  });
+
+  detailNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = detailNoteForm.body.value.trim();
+    if (!body) return;
+    await sendNote(body);
+    renderDetail();
+  });
+
+  // ── Modal "nota generale" — legata alla cartella corrente ────────────────
+  const noteModal = document.getElementById("note-modal");
+  const openNoteModalBtn = document.getElementById("open-note-modal-btn");
+  const closeNoteModalBtn = document.getElementById("close-note-modal-btn");
+  const batchNoteForm = document.getElementById("batch-note-form");
+
+  openNoteModalBtn.addEventListener("click", () => { noteModal.hidden = false; noteModal.querySelector("textarea").focus(); });
+  closeNoteModalBtn.addEventListener("click", () => noteModal.hidden = true);
+  noteModal.querySelector(".modal-backdrop").addEventListener("click", () => noteModal.hidden = true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !noteModal.hidden) noteModal.hidden = true; });
+
+  batchNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = batchNoteForm.body.value.trim();
+    if (!body) return;
+    const fd = new FormData();
+    fd.append("body", body);
+    if (currentFolderId !== null) fd.append("folder_id", currentFolderId);
+    await fetch(`/batch/${BATCH_ID}/notes`, { method: "POST", body: fd });
+    batchNoteForm.body.value = "";
+    noteModal.hidden = true;
+    invalidate(currentFolderId);
+    render();
+  });
+
+  render();
 })();
 </script>
 {% endblock %}

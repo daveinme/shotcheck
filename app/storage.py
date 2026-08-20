@@ -43,3 +43,33 @@ def presigned_url(batch_id: int, stored_filename: str, ttl: int = R2_PRESIGNED_T
 def get_photo_bytes(batch_id: int, stored_filename: str) -> bytes:
     obj = _client.get_object(Bucket=R2_BUCKET, Key=object_key(batch_id, stored_filename))
     return obj["Body"].read()
+
+
+def raw_upload_key(raw_batch_id: int, stored_filename: str) -> str:
+    return f"raw-uploads/{raw_batch_id}/{stored_filename}"
+
+
+def upload_raw_photo(raw_batch_id: int, stored_filename: str, content: bytes, content_type: str = "image/jpeg") -> None:
+    _client.put_object(
+        Bucket=R2_BUCKET,
+        Key=raw_upload_key(raw_batch_id, stored_filename),
+        Body=content,
+        ContentType=content_type,
+    )
+
+
+def get_raw_photo_bytes(raw_batch_id: int, stored_filename: str) -> bytes:
+    obj = _client.get_object(Bucket=R2_BUCKET, Key=raw_upload_key(raw_batch_id, stored_filename))
+    return obj["Body"].read()
+
+
+def delete_raw_photo(raw_batch_id: int, stored_filename: str) -> None:
+    _client.delete_object(Bucket=R2_BUCKET, Key=raw_upload_key(raw_batch_id, stored_filename))
+
+
+def raw_presigned_url(raw_batch_id: int, stored_filename: str, ttl: int = R2_PRESIGNED_TTL) -> str:
+    return _client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": R2_BUCKET, "Key": raw_upload_key(raw_batch_id, stored_filename)},
+        ExpiresIn=ttl,
+    )

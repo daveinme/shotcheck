@@ -5,11 +5,19 @@
   <div class="brand">{{ app_name }}</div>
   <div class="row">
     <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    {% include "_notif_widget.html" %}
     <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
   </div>
 </div>
 
 <div class="container">
+
+  {% if pending_raw_count > 0 %}
+  <a href="/admin/raw-uploads" class="raw-alert">
+    <span class="raw-alert-count">{{ pending_raw_count }}</span>
+    <span>{{ "lotto" if pending_raw_count == 1 else "lotti" }} di bozze da lavorare — vai alla coda</span>
+  </a>
+  {% endif %}
 
   <div class="panel">
     <h2>Nuovo batch</h2>
@@ -34,6 +42,7 @@
       <thead><tr><th>Nome</th><th>Brand</th><th>Foto</th><th>Stato</th><th>Creato</th><th></th></tr></thead>
       <tbody>
         {% for b in batches %}
+        {% set rejected_count = b.photos|selectattr("status.value", "equalto", "rejected")|list|length %}
         <tr>
           <td>{{ b.name }}</td>
           <td>{{ b.brand.name }}</td>
@@ -41,6 +50,7 @@
           <td>
             {% if b.published %}<span class="badge badge-published">Pubblicato</span>
             {% else %}<span class="badge badge-draft">Bozza</span>{% endif %}
+            {% if rejected_count > 0 %}<span class="badge badge-rejected">{{ rejected_count }} da correggere</span>{% endif %}
           </td>
           <td class="hint">{{ b.created_at.strftime("%d/%m/%Y") }}</td>
           <td><a href="/admin/batch/{{ b.id }}">Apri →</a></td>
@@ -115,4 +125,18 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+window.SHOTCHECK_TOUR = {
+  key: "admin-home",
+  steps: [
+    { selector: null, title: "Benvenuto nell'area studio", body: "Da qui gestisci tutti i batch dei clienti e le bozze in coda da lavorare." },
+    { selector: '.raw-alert', title: "Bozze da lavorare", body: "Quando un cliente carica delle foto da farci postprodurre, la trovi segnalata qui in cima — clicca per aprire la coda." },
+    { selector: '.panel h2', title: "Nuovo batch", body: "Crea un nuovo batch per un brand quando hai delle foto pronte da caricare e far revisionare al cliente." },
+    { selector: '#notif-widget', title: "Notifiche", body: "Qui vedi in tempo reale quando un cliente rifiuta una foto o scrive una nota — senza dover controllare la mail." },
+  ],
+};
+</script>
 {% endblock %}

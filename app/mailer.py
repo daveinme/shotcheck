@@ -1,38 +1,23 @@
 import logging
 
-import resend
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
-from app.config import RESEND_API_KEY, EMAIL_FROM, ADMIN_EMAIL, BASE_URL
+from app.config import SENDGRID_API_KEY, EMAIL_FROM, ADMIN_EMAIL, BASE_URL
 
 logger = logging.getLogger("shotcheck")
 
-resend.api_key = RESEND_API_KEY
-
 
 def _send(to: str, subject: str, html: str) -> None:
-    if not RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY non configurata: email non inviata (%s -> %s)", subject, to)
+    if not SENDGRID_API_KEY:
+        logger.warning("SENDGRID_API_KEY non configurata: email non inviata (%s -> %s)", subject, to)
         return
     try:
-        resend.Emails.send({
-            "from": EMAIL_FROM,
-            "to": [to],
-            "subject": subject,
-            "html": html,
-        })
+        client = SendGridAPIClient(SENDGRID_API_KEY)
+        message = Mail(from_email=EMAIL_FROM, to_emails=to, subject=subject, html_content=html)
+        client.send(message)
     except Exception:
         logger.exception("Invio email fallito: %s -> %s", subject, to)
-
-
-def send_account_invite(email: str, name: str, token: str) -> None:
-    link = f"{BASE_URL}/invite/{token}"
-    html = f"""
-    <p>Ciao {name},</p>
-    <p>&Egrave; stato creato per te un account su Shotcheck.</p>
-    <p><a href="{link}">Imposta la tua password</a> per attivarlo.</p>
-    <p>Il link scade tra 48 ore.</p>
-    """
-    _send(email, "Attiva il tuo account Shotcheck", html)
 
 
 def send_batch_published(client_email: str, client_name: str, batch_name: str, batch_id: int) -> None:

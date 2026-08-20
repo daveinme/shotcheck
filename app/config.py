@@ -22,13 +22,16 @@ R2_ENDPOINT_URL = os.environ.get("R2_ENDPOINT_URL") or (
 )
 R2_PRESIGNED_TTL = int(os.environ.get("R2_PRESIGNED_TTL", "900"))  # secondi
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "Shotcheck <notifiche@example.com>")
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "notifiche@example.com")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# bozze del brand: formati foto grezze più ampi (tiff/avif) + note/istruzioni scritte
+ALLOWED_RAW_UPLOAD_EXTS = ALLOWED_IMAGE_EXTS | {".tiff", ".tif", ".avif", ".txt", ".pdf", ".docx"}
 
 # API key dedicata per upload machine-to-machine da Scout (non credenziali utente)
 SCOUT_API_KEY = os.environ.get("SCOUT_API_KEY", "")

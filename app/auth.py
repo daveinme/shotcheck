@@ -15,21 +15,6 @@ serializer = URLSafeTimedSerializer(SECRET_KEY, salt="shotcheck-session")
 SESSION_COOKIE = "shotcheck_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 giorni
 
-invite_serializer = URLSafeTimedSerializer(SECRET_KEY, salt="shotcheck-invite")
-INVITE_MAX_AGE = 60 * 60 * 48  # 48 ore
-
-
-def create_invite_token(user_id: int) -> str:
-    return invite_serializer.dumps({"user_id": user_id})
-
-
-def read_invite_token(token: str) -> int | None:
-    try:
-        data = invite_serializer.loads(token, max_age=INVITE_MAX_AGE)
-        return data.get("user_id")
-    except (BadSignature, SignatureExpired):
-        return None
-
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)

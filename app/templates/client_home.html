@@ -5,22 +5,101 @@
   <div class="brand">{{ app_name }}</div>
   <div class="row">
     <span class="who">{{ user.name }}</span>
+    {% include "_notif_widget.html" %}
     <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
   </div>
 </div>
 
 <div class="container">
-  <h1>Set foto pronti per la revisione</h1>
-  {% if not batches %}
-  <div class="panel hint">Nessun set di foto disponibile al momento.</div>
-  {% endif %}
-  <div class="photo-grid">
-    {% for b in batches %}
-    <a href="/batch/{{ b.id }}" class="photo-card" style="display:block; padding:16px; text-decoration:none;">
-      <div class="sku" style="font-size:16px;">{{ b.name }}</div>
-      <div class="hint">{{ b.photos|length }} foto · pubblicato il {{ b.published_at.strftime("%d/%m/%Y") }}</div>
-    </a>
-    {% endfor %}
+
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="raw">Invia foto<span class="tab-count">{{ raw_batches|length }}</span></button>
+    <button type="button" class="tab-btn" data-tab="ready">Foto pronte per la revisione<span class="tab-count">{{ batches|length }}</span></button>
   </div>
+
+  <section class="tab-panel" id="tab-raw">
+    <div class="panel">
+      <h2>Crea un nuovo lotto</h2>
+      <form id="new-raw-batch-form" class="row">
+        <input type="text" name="name" id="new-raw-batch-name" class="field" placeholder="es. Consegna settembre" required style="flex:1;">
+        <button type="submit">Crea e apri</button>
+      </form>
+      <div class="hint" style="margin-top:8px;">Dopo aver creato il lotto potrai trascinare le foto (anche una cartella con sottocartelle) e organizzarle direttamente nella pagina del lotto.</div>
+    </div>
+
+    {% if raw_batches %}
+    <div class="raw-batch-list">
+      {% for rb in raw_batches %}
+      <a href="/raw-batches/{{ rb.id }}" class="panel" style="display:block; text-decoration:none; color:inherit;">
+        <div class="row" style="justify-content: space-between;">
+          <div>
+            <div class="sku">{{ rb.name }}{% if rb.has_high_priority %} <span class="badge badge-rejected">Urgente</span>{% endif %}</div>
+            <div class="hint">{{ rb.uploads|length }} file · caricato il {{ rb.uploaded_at.strftime("%d/%m/%Y") }}</div>
+          </div>
+          <span class="badge {% if rb.status.value == 'queued' %}badge-draft{% elif rb.status.value == 'processing' %}badge-role{% else %}badge-approved{% endif %}">
+            {% if rb.status.value == "queued" %}In coda{% elif rb.status.value == "processing" %}In lavorazione{% else %}Pubblicato{% endif %}
+          </span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="tab-panel" id="tab-ready" hidden>
+    {% if not batches %}
+    <div class="panel hint">Nessun set di foto disponibile al momento.</div>
+    {% endif %}
+    <div class="photo-grid">
+      {% for b in batches %}
+      <a href="/batch/{{ b.id }}" class="photo-card" style="display:block; padding:16px; text-decoration:none;">
+        <div class="sku" style="font-size:16px;">{{ b.name }}</div>
+        <div class="hint">{{ b.photos|length }} foto · pubblicato il {{ b.published_at.strftime("%d/%m/%Y") }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
 </div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+window.SHOTCHECK_TOUR = {
+  key: "client-home",
+  steps: [
+    { selector: null, title: "Benvenuto su Shotcheck", body: "Da qui gestisci tutto: carichi le foto da farci lavorare e rivedi quelle già pronte. Niente più email o WeTransfer." },
+    { selector: '[data-tab="raw"]', title: "Invia foto", body: "Qui carichi le bozze che vuoi farci postprodurre. Puoi creare cartelle e trascinare i file dentro, come su Google Drive." },
+    { selector: '[data-tab="ready"]', title: "Foto pronte per la revisione", body: "Quando una galleria è pronta, la trovi qui: puoi approvare ogni foto o segnarla \"Da correggere\" con una nota." },
+    { selector: "#notif-widget", title: "Notifiche", body: "La campanella ti avvisa qui dentro il sito quando c'è una novità: una foto corretta, una nota, un cambio di stato. Niente email da controllare." },
+  ],
+};
+</script>
+<script>
+(function () {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.hidden = true);
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).hidden = false;
+    });
+  });
+})();
+
+(function () {
+  const form = document.getElementById("new-raw-batch-form");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("new-raw-batch-name").value.trim();
+    if (!name) return;
+    const fd = new FormData();
+    fd.append("name", name);
+    const res = await fetch("/raw-batches", { method: "POST", body: fd });
+    if (!res.ok) { alert("Errore nella creazione del lotto. Riprova."); return; }
+    const data = await res.json();
+    window.location.href = `/raw-batches/${data.id}`;
+  });
+})();
+</script>
 {% endblock %}

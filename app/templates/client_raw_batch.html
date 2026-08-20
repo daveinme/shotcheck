@@ -1,0 +1,490 @@
+{% extends "base.html" %}
+{% block title %}{{ raw_batch.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<div id="page-drop-overlay" class="page-drop-overlay" hidden>
+  <div class="page-drop-overlay-inner">
+    <p>Rilascia qui le foto per caricarle in questa cartella</p>
+  </div>
+</div>
+
+<div class="topbar">
+  <div class="brand"><a href="/client">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ user.name }}</span>
+    {% include "_notif_widget.html" %}
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+
+  <nav class="breadcrumb">
+    <a href="/client">I miei batch</a>
+    <span class="sep">/</span>
+    <span class="current">{{ raw_batch.name }}</span>
+  </nav>
+
+  <div class="panel">
+    <div class="row" style="justify-content: space-between; align-items:flex-start;">
+      <div>
+        <h1 style="margin-bottom:4px;">{{ raw_batch.name }}</h1>
+        <div class="hint">Bozze in attesa di postproduzione</div>
+      </div>
+      {% if raw_batch.status.value == "queued" %}
+      <form method="post" action="/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente questo lotto e tutti i suoi file?');">
+        <button type="submit" class="danger">Elimina lotto</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 id="notes-panel-title" style="display:inline;">Note generali</h2>
+    <button type="button" class="tip-toggle" aria-controls="tip-notes" aria-label="Come funzionano le note">i</button>
+    <div id="tip-notes" class="tip-body">Le note qui riguardano solo la cartella che stai guardando: se entri in una sottocartella vedi note diverse. Usale per dirci cosa deve sapere chi lavora le foto (es. "priorità su questi 3 capi").</div>
+    <div id="notes-panel-list" class="notes-list"></div>
+    <button type="button" id="open-note-modal-btn" class="secondary" style="margin-top:10px;">Scrivi una nota</button>
+  </div>
+
+  <div class="panel">
+    <div class="filebrowser-toolbar">
+      <nav id="fb-breadcrumb" class="fb-breadcrumb"></nav>
+      <div class="row">
+        <button type="button" id="priority-btn" class="secondary" hidden>Segna cartella come urgente</button>
+        <button type="button" id="new-folder-btn" class="secondary">Nuova cartella</button>
+        <button type="button" id="upload-btn">Carica foto qui</button>
+        <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.tiff,.tif,.avif,.txt,.pdf,.docx" hidden>
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:14px;">Trascina i file ovunque sulla pagina per caricarli qui. Trascina una foto su una cartella per spostarcela.</div>
+
+    <div id="fb-folders" class="fb-grid fb-folders-row"></div>
+    <div id="fb-items" class="fb-grid"></div>
+  </div>
+
+</div>
+
+<div id="note-modal" class="modal-overlay" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="row" style="justify-content: space-between; margin-bottom:14px;">
+      <h2 style="margin:0;">Nota per la postproduzione</h2>
+      <button type="button" id="close-note-modal-btn" class="detail-close" style="position:static;" aria-label="Chiudi">&times;</button>
+    </div>
+    <form id="batch-note-form">
+      <textarea name="body" class="field modal-textarea" placeholder="Lascia una nota per questa cartella..." autofocus></textarea>
+      <button type="submit" class="secondary" style="margin-top:10px;">Invia nota</button>
+    </form>
+  </div>
+</div>
+
+<div id="upload-queue-panel" class="upload-queue-panel" hidden>
+  <div class="upload-queue-header">
+    <span id="upload-queue-title">Caricamento…</span>
+    <div class="row" style="gap:6px;">
+      <button type="button" id="upload-queue-done-btn" class="secondary" style="padding:2px 10px;" hidden>Fatto ✓</button>
+      <button type="button" id="upload-queue-toggle" class="upload-queue-toggle" aria-label="Comprimi">–</button>
+    </div>
+  </div>
+  <div id="upload-queue-list" class="upload-queue-list"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+  const RAW_BATCH_ID = {{ raw_batch.id }};
+  const CURRENT_USER_ID = {{ user.id }};
+  const batchNameEsc = {{ raw_batch.name|tojson }};
+  const allFolders = {{ all_folders_json|safe }};
+  const rootUploads = {{ root_uploads_json|safe }};
+  const rootNotes = {{ root_notes_json|safe }};
+
+  const uploadCache = { root: rootUploads };
+  const noteCache = { root: rootNotes };
+  let currentFolderId = null;
+
+  function folderKey(id) { return id === null ? "root" : String(id); }
+  function childrenOf(parentId) { return allFolders.filter((f) => f.parent_id === parentId).sort((a, b) => a.name.localeCompare(b.name)); }
+  function folderById(id) { return allFolders.find((f) => f.id === id); }
+
+  function breadcrumbTrail(folderId) {
+    const trail = [];
+    let f = folderById(folderId);
+    while (f) { trail.unshift(f); f = folderById(f.parent_id); }
+    return trail;
+  }
+
+  async function ensureFolderData(folderId) {
+    const key = folderKey(folderId);
+    if (uploadCache[key] && noteCache[key]) return;
+    const url = folderId === null
+      ? `/raw-batches/${RAW_BATCH_ID}/root/contents`
+      : `/raw-batches/${RAW_BATCH_ID}/folder/${folderId}/contents`;
+    const res = await fetch(url);
+    const data = await res.json();
+    uploadCache[key] = data.uploads;
+    noteCache[key] = data.notes;
+  }
+
+  async function fetchUploads(folderId) {
+    await ensureFolderData(folderId);
+    return uploadCache[folderKey(folderId)];
+  }
+
+  async function fetchNotes(folderId) {
+    await ensureFolderData(folderId);
+    return noteCache[folderKey(folderId)];
+  }
+
+  function invalidate(folderId) {
+    delete uploadCache[folderKey(folderId)];
+    delete noteCache[folderKey(folderId)];
+  }
+
+  function folderTileHTML(f) {
+    const urgentBadge = f.priority === "high" ? '<span class="badge badge-rejected" style="position:absolute; top:6px; left:6px;">Urgente</span>' : "";
+    return `
+      <div class="fb-tile fb-tile-folder" data-folder-id="${f.id}">
+        ${urgentBadge}
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+        <span class="fb-tile-name">${f.name}</span>
+        <button type="button" class="fb-tile-delete delete-folder-btn" data-folder-id="${f.id}" aria-label="Elimina cartella">&times;</button>
+      </div>`;
+  }
+
+  function uploadTileHTML(u) {
+    return `
+      <div class="photo-card" draggable="true" data-upload-id="${u.id}">
+        <img src="/files/raw/${u.id}" alt="${u.filename}">
+        <div class="body">
+          <div class="sku">${u.filename}</div>
+          <div class="actions">
+            <button type="button" class="danger delete-upload-btn" style="width:100%;" data-upload-id="${u.id}" data-filename="${u.filename}">Elimina</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function noteHTML(n) {
+    const deleteBtn = n.author_id === CURRENT_USER_ID
+      ? `<button type="button" class="note-delete-btn" data-note-id="${n.id}" aria-label="Elimina nota">&times;</button>`
+      : "";
+    return `<div class="note">${deleteBtn}<b>${escapeHtml(n.author)}:</b> <span class="note-body">${escapeHtml(n.body)}</span></div>`;
+  }
+
+  function renderBreadcrumb() {
+    const nav = document.getElementById("fb-breadcrumb");
+    const trail = breadcrumbTrail(currentFolderId);
+    let html = `<a href="#" data-folder-id="">${batchNameEsc}</a>`;
+    for (const f of trail) {
+      html += ` <span class="sep">/</span> <a href="#" data-folder-id="${f.id}">${f.name}</a>`;
+    }
+    nav.innerHTML = html;
+    nav.querySelectorAll("a").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        openFolder(a.dataset.folderId ? Number(a.dataset.folderId) : null);
+      });
+    });
+  }
+
+  function updatePriorityButton() {
+    const btn = document.getElementById("priority-btn");
+    if (currentFolderId === null) { btn.hidden = true; return; }
+    const folder = folderById(currentFolderId);
+    btn.hidden = false;
+    btn.textContent = folder.priority === "high" ? "Rimuovi priorità urgente" : "Segna cartella come urgente";
+    btn.className = folder.priority === "high" ? "danger" : "secondary";
+  }
+
+  async function render() {
+    renderBreadcrumb();
+    updatePriorityButton();
+    const foldersGrid = document.getElementById("fb-folders");
+    const itemsGrid = document.getElementById("fb-items");
+    const subfolders = childrenOf(currentFolderId);
+    const uploads = await fetchUploads(currentFolderId);
+
+    foldersGrid.innerHTML = subfolders.map(folderTileHTML).join("");
+    if (uploads.length === 0) {
+      itemsGrid.innerHTML = subfolders.length === 0
+        ? '<div class="hint" style="padding:20px 0;">Cartella vuota. Trascina qui delle foto o crea una sottocartella.</div>'
+        : "";
+    } else {
+      itemsGrid.innerHTML = uploads.map(uploadTileHTML).join("");
+    }
+    wireGridHandlers();
+
+    const folder = folderById(currentFolderId);
+    document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";
+    const notes = await fetchNotes(currentFolderId);
+    renderNotesPanel(notes);
+  }
+
+  function renderNotesPanel(notes) {
+    const list = document.getElementById("notes-panel-list");
+    list.innerHTML = notes.map(noteHTML).join("");
+    list.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/raw-notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+  }
+
+  function openFolder(folderId) {
+    currentFolderId = folderId;
+    render();
+  }
+
+  function wireGridHandlers() {
+    document.querySelectorAll(".fb-tile-folder").forEach((tile) => {
+      tile.addEventListener("click", (e) => {
+        if (e.target.closest(".delete-folder-btn")) return;
+        openFolder(Number(tile.dataset.folderId));
+      });
+      tile.addEventListener("dragover", (e) => { e.preventDefault(); tile.classList.add("fb-tile-drop-active"); });
+      tile.addEventListener("dragleave", () => tile.classList.remove("fb-tile-drop-active"));
+      tile.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        tile.classList.remove("fb-tile-drop-active");
+        const uploadId = e.dataTransfer.getData("text/upload-id");
+        if (!uploadId) return;
+        const targetFolderId = Number(tile.dataset.folderId);
+        await moveUpload(uploadId, targetFolderId);
+        invalidate(currentFolderId);
+        invalidate(targetFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".delete-folder-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const folderId = btn.dataset.folderId;
+        const summaryRes = await fetch(`/raw-batches/${RAW_BATCH_ID}/folders/${folderId}/summary`);
+        const summary = await summaryRes.json();
+
+        let message = "Eliminare questa cartella?";
+        if (summary.subfolder_count > 0 || summary.file_count > 0) {
+          const parts = [];
+          if (summary.subfolder_count > 0) parts.push(`${summary.subfolder_count} sottocartelle`);
+          if (summary.file_count > 0) parts.push(`${summary.file_count} file`);
+          message = `Questa cartella contiene ${parts.join(" e ")}. Eliminandola perderai tutto il contenuto in modo definitivo. Continuare?`;
+        }
+        if (!confirm(message)) return;
+
+        const res = await fetch(`/raw-batches/${RAW_BATCH_ID}/folders/${folderId}/delete`, { method: "POST" });
+        if (!res.ok) {
+          alert("Errore durante l'eliminazione. Riprova.");
+          return;
+        }
+        const idx = allFolders.findIndex((f) => f.id === Number(folderId));
+        if (idx >= 0) allFolders.splice(idx, 1);
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".delete-upload-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm(`Eliminare ${btn.dataset.filename}?`)) return;
+        await fetch(`/raw-batches/${RAW_BATCH_ID}/uploads/${btn.dataset.uploadId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+
+    document.querySelectorAll(".photo-card[draggable]").forEach((card) => {
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/upload-id", card.dataset.uploadId);
+      });
+    });
+  }
+
+  async function moveUpload(uploadId, folderId) {
+    const fd = new FormData();
+    if (folderId !== null) fd.append("folder_id", folderId);
+    await fetch(`/raw-batches/${RAW_BATCH_ID}/uploads/${uploadId}/move`, { method: "POST", body: fd });
+  }
+
+  document.getElementById("priority-btn").addEventListener("click", async () => {
+    if (currentFolderId === null) return;
+    const folder = folderById(currentFolderId);
+    const newPriority = folder.priority === "high" ? "normal" : "high";
+    const fd = new FormData();
+    fd.append("priority", newPriority);
+    await fetch(`/raw-batches/${RAW_BATCH_ID}/folders/${currentFolderId}/priority`, { method: "POST", body: fd });
+    folder.priority = newPriority;
+    render();
+  });
+
+  document.getElementById("new-folder-btn").addEventListener("click", async () => {
+    const name = prompt("Nome della nuova cartella:");
+    if (!name || !name.trim()) return;
+    const fd = new FormData();
+    fd.append("name", name.trim());
+    if (currentFolderId !== null) fd.append("parent_id", currentFolderId);
+    const res = await fetch(`/raw-batches/${RAW_BATCH_ID}/folders`, { method: "POST", body: fd });
+    const folder = await res.json();
+    allFolders.push(folder);
+    render();
+  });
+
+  const fileInput = document.getElementById("file-input");
+  document.getElementById("upload-btn").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const files = Array.from(fileInput.files).filter((f) => /\.(jpe?g|png|webp|tiff?|avif|txt|pdf|docx)$/i.test(f.name));
+    fileInput.value = "";
+    if (files.length) enqueueFiles(files, currentFolderId);
+  });
+
+  const pageOverlay = document.getElementById("page-drop-overlay");
+  let dragCounter = 0;
+  document.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragCounter++;
+    pageOverlay.hidden = false;
+  });
+  document.addEventListener("dragover", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  });
+  document.addEventListener("dragleave", () => {
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; pageOverlay.hidden = true; }
+  });
+  window.addEventListener("dragleave", (e) => {
+    if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+      dragCounter = 0;
+      pageOverlay.hidden = true;
+    }
+  });
+  document.addEventListener("drop", (e) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragCounter = 0;
+    pageOverlay.hidden = true;
+    const files = Array.from(e.dataTransfer.files).filter((f) => /\.(jpe?g|png|webp|tiff?|avif|txt|pdf|docx)$/i.test(f.name));
+    if (files.length) enqueueFiles(files, currentFolderId);
+  });
+
+  const queuePanel = document.getElementById("upload-queue-panel");
+  const queueTitle = document.getElementById("upload-queue-title");
+  const queueList = document.getElementById("upload-queue-list");
+  const queueDoneBtn = document.getElementById("upload-queue-done-btn");
+  queueDoneBtn.addEventListener("click", () => { queuePanel.hidden = true; });
+  document.getElementById("upload-queue-toggle").addEventListener("click", () => {
+    const collapsed = queueList.style.display === "none";
+    queueList.style.display = collapsed ? "" : "none";
+    document.getElementById("upload-queue-toggle").textContent = collapsed ? "–" : "+";
+  });
+
+  function uploadOneFile(file, folderId) {
+    return new Promise((resolve) => {
+      const row = document.createElement("div");
+      row.className = "upload-queue-row";
+      row.innerHTML = `<span class="upload-queue-name">${file.name}</span><span class="upload-queue-pct">0%</span>`;
+      queueList.appendChild(row);
+      const pctEl = row.querySelector(".upload-queue-pct");
+
+      const fd = new FormData();
+      fd.append("files", file);
+      if (folderId) fd.append("folder_id", folderId);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/raw-batches/${RAW_BATCH_ID}/upload`);
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (!ev.lengthComputable) return;
+        pctEl.textContent = Math.round((ev.loaded / ev.total) * 100) + "%";
+      });
+      xhr.addEventListener("loadend", () => {
+        const ok = xhr.status >= 200 && xhr.status < 400;
+        row.classList.add(ok ? "upload-queue-done" : "upload-queue-failed");
+        pctEl.textContent = ok ? "✓" : "Errore";
+        let uploads = [];
+        if (ok) {
+          try { uploads = JSON.parse(xhr.responseText).uploads || []; } catch (e) { /* risposta non JSON */ }
+        }
+        resolve(uploads);
+      });
+      xhr.send(fd);
+    });
+  }
+
+  // Coda unica per l'intera pagina: se un upload è già in corso, i nuovi
+  // file si accodano invece di avviare una seconda scrittura in parallelo
+  // (SQLite non tollera due INSERT concorrenti -> "database is locked").
+  const uploadQueue = [];
+  let queueRunning = false;
+
+  function enqueueFiles(files, folderId) {
+    for (const file of files) uploadQueue.push({ file, folderId });
+    if (!queueRunning) runQueue();
+  }
+
+  async function runQueue() {
+    queueRunning = true;
+    queuePanel.hidden = false;
+    queueDoneBtn.hidden = true;
+    queueList.style.display = "";
+    document.getElementById("upload-queue-toggle").textContent = "–";
+
+    let done = 0;
+    while (uploadQueue.length > 0) {
+      const total = done + uploadQueue.length;
+      queueTitle.textContent = `Caricamento ${done}/${total}`;
+      const { file, folderId } = uploadQueue.shift();
+      const uploads = await uploadOneFile(file, folderId);
+      done++;
+
+      const key = folderKey(folderId);
+      if (uploads.length) {
+        if (!uploadCache[key]) uploadCache[key] = [];
+        uploadCache[key] = uploadCache[key].concat(uploads);
+        if (folderId === currentFolderId) render();
+      }
+    }
+    queueTitle.textContent = `Completato: ${done} file`;
+    queueRunning = false;
+    queueDoneBtn.hidden = false;
+  }
+
+  // ── Modal "nota generale" — legata alla cartella corrente ────────────────
+  const noteModal = document.getElementById("note-modal");
+  const openNoteModalBtn = document.getElementById("open-note-modal-btn");
+  const closeNoteModalBtn = document.getElementById("close-note-modal-btn");
+  const batchNoteForm = document.getElementById("batch-note-form");
+
+  openNoteModalBtn.addEventListener("click", () => { noteModal.hidden = false; noteModal.querySelector("textarea").focus(); });
+  closeNoteModalBtn.addEventListener("click", () => noteModal.hidden = true);
+  noteModal.querySelector(".modal-backdrop").addEventListener("click", () => noteModal.hidden = true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !noteModal.hidden) noteModal.hidden = true; });
+
+  batchNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = batchNoteForm.body.value.trim();
+    if (!body) return;
+    const fd = new FormData();
+    fd.append("body", body);
+    if (currentFolderId !== null) fd.append("folder_id", currentFolderId);
+    await fetch(`/raw-batches/${RAW_BATCH_ID}/notes`, { method: "POST", body: fd });
+    batchNoteForm.body.value = "";
+    noteModal.hidden = true;
+    invalidate(currentFolderId);
+    render();
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

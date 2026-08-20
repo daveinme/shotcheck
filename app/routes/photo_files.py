@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_login
 from app.db import get_db
-from app.models import User, UserRole, PhotoVersion
-from app.storage import presigned_url
+from app.models import User, UserRole, PhotoVersion, RawUpload
+from app.storage import presigned_url, raw_presigned_url
 
 router = APIRouter()
 
@@ -26,4 +26,21 @@ async def serve_photo_version(
             raise HTTPException(404, "File non trovato")
 
     url = presigned_url(batch.id, version.filename)
+    return RedirectResponse(url=url, status_code=307)
+
+
+@router.get("/files/raw/{upload_id}")
+async def serve_raw_upload(
+    upload_id: int,
+    db: Session = Depends(get_db), user: User = Depends(require_login),
+):
+    upload = db.query(RawUpload).filter(RawUpload.id == upload_id).first()
+    if not upload:
+        raise HTTPException(404, "File non trovato")
+    raw_batch = upload.raw_batch
+
+    if user.role == UserRole.user and raw_batch.brand_id != user.brand_id:
+        raise HTTPException(404, "File non trovato")
+
+    url = raw_presigned_url(raw_batch.id, upload.stored_filename)
     return RedirectResponse(url=url, status_code=307)

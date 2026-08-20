@@ -13,11 +13,18 @@
         </div>
         <div>
           <label>Password</label>
-          <input type="password" name="password" required>
+          <div class="pw-wrap">
+            <input type="password" name="password" required>
+            <button type="button" class="pw-toggle" aria-label="Mostra password">
+              <svg class="pw-eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="pw-eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.6 20.6 0 0 1 5.06-5.94M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 8 11 8a20.6 20.6 0 0 1-2.34 3.4M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
         </div>
       </div>
       <button type="submit" style="width:100%">Accedi</button>
     </form>
+    <p class="hint" style="margin-top:16px;"><a href="/activate">Primo accesso? Imposta la tua password</a></p>
   </div>
 </div>
 {% endblock %}

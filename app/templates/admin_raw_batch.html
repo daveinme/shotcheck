@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ raw_batch.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand"><a href="/admin">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    {% include "_notif_widget.html" %}
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+
+  <nav class="breadcrumb">
+    <a href="/admin/raw-uploads">Bozze</a>
+    <span class="sep">/</span>
+    <span class="current">{{ raw_batch.name }}</span>
+  </nav>
+
+  <div class="panel">
+    <div class="row" style="justify-content: space-between; align-items:flex-start;">
+      <div>
+        <h1 style="margin-bottom:4px;">{{ raw_batch.name }}</h1>
+        <div class="hint">{{ raw_batch.brand.name }} · {{ raw_batch.uploads|length }} file · caricato il {{ raw_batch.uploaded_at.strftime("%d/%m/%Y") }} da {{ raw_batch.uploaded_by.name }}</div>
+      </div>
+      <div class="row">
+        <a href="/admin/raw-batches/{{ raw_batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
+        <form method="post" action="/admin/raw-batches/{{ raw_batch.id }}/status">
+          <select name="status" onchange="this.form.submit()">
+            <option value="queued" {% if raw_batch.status.value == "queued" %}selected{% endif %}>In coda</option>
+            <option value="processing" {% if raw_batch.status.value == "processing" %}selected{% endif %}>In lavorazione</option>
+            <option value="published" {% if raw_batch.status.value == "published" %}selected{% endif %}>Pubblicato</option>
+          </select>
+        </form>
+        <form method="post" action="/admin/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente il lotto \'{{ raw_batch.name }}\' e tutti i {{ raw_batch.uploads|length }} file? Non è reversibile.');">
+          <button type="submit" class="danger">Elimina</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 id="notes-panel-title" style="display:inline;">Note generali</h2>
+    <button type="button" class="tip-toggle" aria-controls="tip-notes" aria-label="Come funzionano le note">i</button>
+    <div id="tip-notes" class="tip-body">Le note qui riguardano solo la cartella che stai guardando: cambiano se entri in una sottocartella. Il cliente le usa per darti indicazioni su come lavorare le bozze.</div>
+    <div id="notes-panel-list" class="notes-list"></div>
+    <button type="button" id="open-note-modal-btn" class="secondary" style="margin-top:10px;">Scrivi una nota</button>
+  </div>
+
+  <div class="panel">
+    <nav id="fb-breadcrumb" class="fb-breadcrumb" style="margin-bottom:14px;"></nav>
+    <div id="fb-folders" class="fb-grid fb-folders-row"></div>
+    <div id="fb-items" class="fb-grid"></div>
+  </div>
+
+</div>
+
+<div id="note-modal" class="modal-overlay" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-box">
+    <div class="row" style="justify-content: space-between; margin-bottom:14px;">
+      <h2 style="margin:0;">Nota per il brand</h2>
+      <button type="button" id="close-note-modal-btn" class="detail-close" style="position:static;" aria-label="Chiudi">&times;</button>
+    </div>
+    <form id="batch-note-form">
+      <textarea name="body" class="field modal-textarea" placeholder="Lascia una nota per questa cartella..." autofocus></textarea>
+      <button type="submit" class="secondary" style="margin-top:10px;">Invia nota</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+  const RAW_BATCH_ID = {{ raw_batch.id }};
+  const CURRENT_USER_ID = {{ staff.id }};
+  const batchNameEsc = {{ raw_batch.name|tojson }};
+  const allFolders = {{ all_folders_json|safe }};
+  const rootUploads = {{ root_uploads_json|safe }};
+  const rootNotes = {{ root_notes_json|safe }};
+
+  const uploadCache = { root: rootUploads };
+  const noteCache = { root: rootNotes };
+  let currentFolderId = null;
+
+  function folderKey(id) { return id === null ? "root" : String(id); }
+  function childrenOf(parentId) { return allFolders.filter((f) => f.parent_id === parentId).sort((a, b) => a.name.localeCompare(b.name)); }
+  function folderById(id) { return allFolders.find((f) => f.id === id); }
+
+  function breadcrumbTrail(folderId) {
+    const trail = [];
+    let f = folderById(folderId);
+    while (f) { trail.unshift(f); f = folderById(f.parent_id); }
+    return trail;
+  }
+
+  async function ensureFolderData(folderId) {
+    const key = folderKey(folderId);
+    if (uploadCache[key] && noteCache[key]) return;
+    const url = folderId === null
+      ? `/admin/raw-batches/${RAW_BATCH_ID}/root/contents`
+      : `/admin/raw-batches/${RAW_BATCH_ID}/folder/${folderId}/contents`;
+    const res = await fetch(url);
+    const data = await res.json();
+    uploadCache[key] = data.uploads;
+    noteCache[key] = data.notes;
+  }
+
+  async function fetchUploads(folderId) {
+    await ensureFolderData(folderId);
+    return uploadCache[folderKey(folderId)];
+  }
+
+  async function fetchNotes(folderId) {
+    await ensureFolderData(folderId);
+    return noteCache[folderKey(folderId)];
+  }
+
+  function invalidate(folderId) {
+    delete uploadCache[folderKey(folderId)];
+    delete noteCache[folderKey(folderId)];
+  }
+
+  function folderTileHTML(f) {
+    const urgentBadge = f.priority === "high" ? '<span class="badge badge-rejected" style="position:absolute; top:6px; left:6px;">Urgente</span>' : "";
+    return `
+      <div class="fb-tile fb-tile-folder" data-folder-id="${f.id}">
+        ${urgentBadge}
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>
+        <span class="fb-tile-name">${f.name}</span>
+      </div>`;
+  }
+
+  function uploadTileHTML(u) {
+    return `
+      <div class="photo-card">
+        <img src="/files/raw/${u.id}" alt="${u.filename}">
+        <div class="body">
+          <div class="sku">${u.filename}</div>
+        </div>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function noteHTML(n) {
+    const deleteBtn = n.author_id === CURRENT_USER_ID
+      ? `<button type="button" class="note-delete-btn" data-note-id="${n.id}" aria-label="Elimina nota">&times;</button>`
+      : "";
+    return `<div class="note">${deleteBtn}<b>${escapeHtml(n.author)}:</b> <span class="note-body">${escapeHtml(n.body)}</span></div>`;
+  }
+
+  function renderBreadcrumb() {
+    const nav = document.getElementById("fb-breadcrumb");
+    const trail = breadcrumbTrail(currentFolderId);
+    let html = `<a href="#" data-folder-id="">${batchNameEsc}</a>`;
+    for (const f of trail) {
+      html += ` <span class="sep">/</span> <a href="#" data-folder-id="${f.id}">${f.name}</a>`;
+    }
+    nav.innerHTML = html;
+    nav.querySelectorAll("a").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        openFolder(a.dataset.folderId ? Number(a.dataset.folderId) : null);
+      });
+    });
+  }
+
+  async function render() {
+    renderBreadcrumb();
+    const foldersGrid = document.getElementById("fb-folders");
+    const itemsGrid = document.getElementById("fb-items");
+    const subfolders = childrenOf(currentFolderId);
+    const uploads = await fetchUploads(currentFolderId);
+
+    foldersGrid.innerHTML = subfolders.map(folderTileHTML).join("");
+    if (uploads.length === 0) {
+      itemsGrid.innerHTML = subfolders.length === 0
+        ? '<div class="hint" style="padding:20px 0;">Cartella vuota.</div>'
+        : "";
+    } else {
+      itemsGrid.innerHTML = uploads.map(uploadTileHTML).join("");
+    }
+    wireGridHandlers();
+
+    const folder = folderById(currentFolderId);
+    document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";
+    const notes = await fetchNotes(currentFolderId);
+    renderNotesPanel(notes);
+  }
+
+  function renderNotesPanel(notes) {
+    const list = document.getElementById("notes-panel-list");
+    list.innerHTML = notes.map(noteHTML).join("");
+    list.querySelectorAll(".note-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa nota?")) return;
+        await fetch(`/raw-notes/${btn.dataset.noteId}/delete`, { method: "POST" });
+        invalidate(currentFolderId);
+        render();
+      });
+    });
+  }
+
+  function openFolder(folderId) {
+    currentFolderId = folderId;
+    render();
+  }
+
+  function wireGridHandlers() {
+    document.querySelectorAll(".fb-tile-folder").forEach((tile) => {
+      tile.addEventListener("click", () => openFolder(Number(tile.dataset.folderId)));
+    });
+  }
+
+  // ── Modal "nota generale" — legata alla cartella corrente ────────────────
+  const noteModal = document.getElementById("note-modal");
+  const openNoteModalBtn = document.getElementById("open-note-modal-btn");
+  const closeNoteModalBtn = document.getElementById("close-note-modal-btn");
+  const batchNoteForm = document.getElementById("batch-note-form");
+
+  openNoteModalBtn.addEventListener("click", () => { noteModal.hidden = false; noteModal.querySelector("textarea").focus(); });
+  closeNoteModalBtn.addEventListener("click", () => noteModal.hidden = true);
+  noteModal.querySelector(".modal-backdrop").addEventListener("click", () => noteModal.hidden = true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !noteModal.hidden) noteModal.hidden = true; });
+
+  batchNoteForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = batchNoteForm.body.value.trim();
+    if (!body) return;
+    const fd = new FormData();
+    fd.append("body", body);
+    if (currentFolderId !== null) fd.append("folder_id", currentFolderId);
+    await fetch(`/raw-batches/${RAW_BATCH_ID}/notes`, { method: "POST", body: fd });
+    batchNoteForm.body.value = "";
+    noteModal.hidden = true;
+    invalidate(currentFolderId);
+    render();
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

@@ -9,5 +9,190 @@
 <body>
 {% block body %}{% endblock %}
 {% block extra_body %}{% endblock %}
+{% if user is defined or staff is defined %}
+<script>
+(function () {
+  const bellBtn = document.getElementById("notif-bell-btn");
+  const dropdown = document.getElementById("notif-dropdown");
+  const badge = document.getElementById("notif-badge");
+  const list = document.getElementById("notif-list");
+  const readAllBtn = document.getElementById("notif-read-all-btn");
+
+  function timeAgo(iso) {
+    const diffMin = Math.round((Date.now() - new Date(iso)) / 60000);
+    if (diffMin < 1) return "ora";
+    if (diffMin < 60) return `${diffMin} min fa`;
+    const diffH = Math.round(diffMin / 60);
+    if (diffH < 24) return `${diffH} h fa`;
+    return `${Math.round(diffH / 24)} g fa`;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function refresh() {
+    const res = await fetch("/notifications");
+    const data = await res.json();
+    badge.hidden = data.unread_count === 0;
+    badge.textContent = data.unread_count;
+    if (data.notifications.length === 0) {
+      list.innerHTML = '<div class="hint" style="padding:16px;">Nessuna notifica.</div>';
+      return;
+    }
+    list.innerHTML = data.notifications.map((n) => `
+      <a href="${n.link}" class="notif-item ${n.read ? "" : "notif-item-unread"}" data-notif-id="${n.id}">
+        <div class="notif-item-summary">${escapeHtml(n.summary)}</div>
+        <div class="notif-item-time">${timeAgo(n.created_at)}</div>
+      </a>
+    `).join("");
+  }
+
+  bellBtn.addEventListener("click", () => {
+    dropdown.hidden = !dropdown.hidden;
+    if (!dropdown.hidden) refresh();
+  });
+  document.addEventListener("click", (e) => {
+    if (!dropdown.hidden && !e.target.closest("#notif-widget")) dropdown.hidden = true;
+  });
+
+  list.addEventListener("click", (e) => {
+    const item = e.target.closest(".notif-item");
+    if (!item) return;
+    fetch(`/notifications/${item.dataset.notifId}/read`, { method: "POST" });
+  });
+
+  readAllBtn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    await fetch("/notifications/read-all", { method: "POST" });
+    refresh();
+  });
+
+  refresh();
+  setInterval(refresh, 60000);
+})();
+</script>
+{% endif %}
+<div id="tour-overlay" class="tour-overlay" hidden>
+  <div id="tour-spotlight" class="tour-spotlight"></div>
+  <div id="tour-box" class="tour-box">
+    <div id="tour-step-title" class="tour-step-title"></div>
+    <div id="tour-step-body" class="tour-step-body"></div>
+    <div class="tour-box-footer">
+      <span id="tour-step-count" class="tour-step-count"></span>
+      <div class="row" style="gap:8px;">
+        <button type="button" id="tour-skip-btn" class="secondary">Salta</button>
+        <button type="button" id="tour-prev-btn" class="secondary" hidden>Indietro</button>
+        <button type="button" id="tour-next-btn">Avanti</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const restartBtn = document.getElementById("tour-restart-btn");
+  if (!window.SHOTCHECK_TOUR || !restartBtn) return;
+
+  const { key, steps } = window.SHOTCHECK_TOUR;
+  const storageKey = `shotcheck-tour-seen-${key}`;
+  restartBtn.hidden = false;
+
+  const overlay = document.getElementById("tour-overlay");
+  const spotlight = document.getElementById("tour-spotlight");
+  const box = document.getElementById("tour-box");
+  const titleEl = document.getElementById("tour-step-title");
+  const bodyEl = document.getElementById("tour-step-body");
+  const countEl = document.getElementById("tour-step-count");
+  const prevBtn = document.getElementById("tour-prev-btn");
+  const nextBtn = document.getElementById("tour-next-btn");
+  const skipBtn = document.getElementById("tour-skip-btn");
+
+  let stepIndex = 0;
+
+  function positionOn(step) {
+    const target = step.selector ? document.querySelector(step.selector) : null;
+    if (!target) {
+      spotlight.style.display = "none";
+      box.style.top = "50%";
+      box.style.left = "50%";
+      box.style.transform = "translate(-50%, -50%)";
+      return;
+    }
+    const r = target.getBoundingClientRect();
+    const pad = 8;
+    spotlight.style.display = "block";
+    spotlight.style.top = `${r.top - pad}px`;
+    spotlight.style.left = `${r.left - pad}px`;
+    spotlight.style.width = `${r.width + pad * 2}px`;
+    spotlight.style.height = `${r.height + pad * 2}px`;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+
+    const boxTop = r.bottom + pad * 2 + 12;
+    const fitsBelow = boxTop + 160 < window.innerHeight;
+    box.style.transform = "none";
+    box.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - 340))}px`;
+    box.style.top = fitsBelow ? `${boxTop}px` : `${Math.max(12, r.top - 172)}px`;
+  }
+
+  function renderStep() {
+    const step = steps[stepIndex];
+    titleEl.textContent = step.title;
+    bodyEl.textContent = step.body;
+    countEl.textContent = `${stepIndex + 1} / ${steps.length}`;
+    prevBtn.hidden = stepIndex === 0;
+    nextBtn.textContent = stepIndex === steps.length - 1 ? "Fine" : "Avanti";
+    setTimeout(() => positionOn(step), 50);
+  }
+
+  function endTour() {
+    overlay.hidden = true;
+    localStorage.setItem(storageKey, "1");
+  }
+
+  function startTour() {
+    stepIndex = 0;
+    overlay.hidden = false;
+    renderStep();
+  }
+
+  nextBtn.addEventListener("click", () => {
+    if (stepIndex === steps.length - 1) { endTour(); return; }
+    stepIndex++;
+    renderStep();
+  });
+  prevBtn.addEventListener("click", () => {
+    if (stepIndex === 0) return;
+    stepIndex--;
+    renderStep();
+  });
+  skipBtn.addEventListener("click", endTour);
+  window.addEventListener("resize", () => { if (!overlay.hidden) positionOn(steps[stepIndex]); });
+
+  restartBtn.addEventListener("click", startTour);
+
+  if (!localStorage.getItem(storageKey)) startTour();
+})();
+</script>
+<script>
+document.addEventListener("click", (e) => {
+  const tipBtn = e.target.closest(".tip-toggle");
+  if (tipBtn) {
+    const body = document.getElementById(tipBtn.getAttribute("aria-controls"));
+    if (body) body.classList.toggle("tip-open");
+  }
+});
+</script>
+<script>
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pw-toggle");
+  if (!btn) return;
+  const input = btn.previousElementSibling;
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  btn.setAttribute("aria-label", showing ? "Mostra password" : "Nascondi password");
+  btn.querySelector(".pw-eye-open").style.display = showing ? "block" : "none";
+  btn.querySelector(".pw-eye-closed").style.display = showing ? "none" : "block";
+});
+</script>
 </body>
 </html>
