@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Studio — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand">{{ app_name }}</div>
+  <div class="row">
+    <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="panel">
+    <h2>Nuovo batch</h2>
+    <form method="post" action="/admin/batches" class="grid-form">
+      <div>
+        <label>Nome batch</label>
+        <input type="text" name="name" class="field" placeholder="es. Batch 5 — Ottobre" required>
+      </div>
+      <div>
+        <label>Brand</label>
+        <select name="brand_id" required>
+          {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit">Crea</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Batch</h2>
+    <table>
+      <thead><tr><th>Nome</th><th>Brand</th><th>Foto</th><th>Stato</th><th>Creato</th><th></th></tr></thead>
+      <tbody>
+        {% for b in batches %}
+        <tr>
+          <td>{{ b.name }}</td>
+          <td>{{ b.brand.name }}</td>
+          <td>{{ b.photos|length }}</td>
+          <td>
+            {% if b.published %}<span class="badge badge-published">Pubblicato</span>
+            {% else %}<span class="badge badge-draft">Bozza</span>{% endif %}
+          </td>
+          <td class="hint">{{ b.created_at.strftime("%d/%m/%Y") }}</td>
+          <td><a href="/admin/batch/{{ b.id }}">Apri →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Brand</h2>
+    <form method="post" action="/admin/brands" class="grid-form" style="margin-bottom:16px;">
+      <div>
+        <label>Nuovo brand</label>
+        <input type="text" name="name" class="field" placeholder="es. Zani del Fra'" required>
+      </div>
+      <button type="submit">Aggiungi</button>
+    </form>
+    <div class="hint">{{ brands|length }} brand registrati: {{ brands|map(attribute="name")|join(", ") }}</div>
+  </div>
+
+  <div class="panel">
+    <h2>Account</h2>
+    <form method="post" action="/admin/users" class="grid-form" style="margin-bottom:16px;">
+      <div>
+        <label>Nome</label>
+        <input type="text" name="name" class="field" required>
+      </div>
+      <div>
+        <label>Email</label>
+        <input type="email" name="email" class="field" required>
+      </div>
+      <div>
+        <label>Ruolo</label>
+        <select name="role" id="role-sel" onchange="document.getElementById('brand-field').style.display = this.value==='user' ? 'block' : 'none'">
+          <option value="user">User (cliente)</option>
+          {% if staff.role.value == "superadmin" %}
+          <option value="admin">Admin</option>
+          <option value="superadmin">Superadmin</option>
+          {% endif %}
+        </select>
+      </div>
+      <div id="brand-field">
+        <label>Brand (solo per User)</label>
+        <select name="brand_id">
+          {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit">Invita</button>
+    </form>
+
+    <table>
+      <thead><tr><th>Nome</th><th>Email</th><th>Ruolo</th><th>Brand</th><th></th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.name }}</td>
+          <td class="hint">{{ u.email }}</td>
+          <td><span class="badge badge-role">{{ u.role.value }}</span></td>
+          <td class="hint">{{ u.brand.name if u.brand else "—" }}</td>
+          <td>
+            {% if staff.role.value == "superadmin" and u.id != staff.id %}
+            <form method="post" action="/admin/users/{{ u.id }}/delete" onsubmit="return confirm('Eliminare l\'account {{ u.email }}?')">
+              <button type="submit" class="danger" style="padding:4px 10px;">Elimina</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}I tuoi set foto — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand">{{ app_name }}</div>
+  <div class="row">
+    <span class="who">{{ user.name }}</span>
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+  <h1>Set foto pronti per la revisione</h1>
+  {% if not batches %}
+  <div class="panel hint">Nessun set di foto disponibile al momento.</div>
+  {% endif %}
+  <div class="photo-grid">
+    {% for b in batches %}
+    <a href="/batch/{{ b.id }}" class="photo-card" style="display:block; padding:16px; text-decoration:none;">
+      <div class="sku" style="font-size:16px;">{{ b.name }}</div>
+      <div class="hint">{{ b.photos|length }} foto · pubblicato il {{ b.published_at.strftime("%d/%m/%Y") }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

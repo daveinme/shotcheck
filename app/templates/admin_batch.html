@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ batch.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand"><a href="/admin">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+
+  <nav class="breadcrumb">
+    <a href="/admin">{{ app_name }}</a>
+    <span class="sep">/</span>
+    <span class="current">{{ batch.name }}</span>
+  </nav>
+
+  <div class="panel">
+    <div class="row" style="justify-content: space-between;">
+      <div>
+        <h1 style="margin-bottom:4px;">{{ batch.name }}</h1>
+        <div class="hint">{{ batch.brand.name }} · {{ photos|length }} foto</div>
+      </div>
+      <div class="row">
+        <a href="/admin/batch/{{ batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
+        {% if batch.published %}
+          <span class="badge badge-published">Pubblicato — visibile al cliente</span>
+        {% else %}
+          <span class="badge badge-draft">Bozza — non ancora visibile al cliente</span>
+          <form method="post" action="/admin/batch/{{ batch.id }}/publish" onsubmit="return confirm('Confermi la pubblicazione? Il cliente riceverà una email con il link.')">
+            <button type="submit">Invita cliente</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Carica foto</h2>
+    <form method="post" action="/admin/batch/{{ batch.id }}/upload" enctype="multipart/form-data" class="row">
+      <input type="file" name="files" multiple accept=".jpg,.jpeg,.png,.webp" required style="flex:1;">
+      <button type="submit">Carica</button>
+    </form>
+    <div class="hint" style="margin-top:8px;">
+      Il nome del file (senza estensione) identifica il capo. Ricaricando un file con lo stesso nome crei una nuova versione (V2, V3...) mantenendo lo storico.
+    </div>
+  </div>
+
+  <div class="photo-grid">
+    {% for p in photos %}
+    <div class="photo-card">
+      <img src="/files/version/{{ p.latest_version.id }}" alt="{{ p.sku }}">
+      <div class="body">
+        <div class="sku">{{ p.sku }}</div>
+        <div class="row" style="justify-content: space-between;">
+          <span>
+            {% if p.versions|length > 1 %}<span class="badge badge-role">V{{ p.latest_version.version_num }}</span>{% endif %}
+            {% if p.status.value == "approved" %}<span class="badge badge-approved">Approvata</span>
+            {% elif p.status.value == "rejected" %}<span class="badge badge-rejected">Da correggere</span>
+            {% else %}<span class="badge badge-pending">In attesa</span>{% endif %}
+          </span>
+        </div>
+        {% if p.notes %}
+        <div class="notes-list">
+          {% for n in p.notes[-3:] %}
+          <div class="note"><b>{{ n.author.name }}:</b> {{ n.body }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="actions">
+          <form method="post" action="/admin/batch/{{ batch.id }}/photo/{{ p.id }}/delete" onsubmit="return confirm('Eliminare {{ p.sku }} e tutte le versioni?')" style="flex:1;">
+            <button type="submit" class="danger" style="width:100%;">Elimina</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

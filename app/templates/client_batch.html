@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ batch.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand"><a href="/client">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ user.name }}</span>
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+  <nav class="breadcrumb">
+    <a href="/client">I miei batch</a>
+    <span class="sep">/</span>
+    <span class="current">{{ batch.name }}</span>
+  </nav>
+
+  <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <h1 style="margin: 0;">{{ batch.name }}</h1>
+    <div class="row">
+      <a href="/batch/{{ batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
+      <form method="post" action="/batch/{{ batch.id }}/approve-all" onsubmit="return confirm('Approvare tutte le foto del batch?');">
+        <button type="submit" style="background: var(--ok);">Approva tutte</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="photo-grid">
+    {% for p in photos %}
+    <div class="photo-card">
+      <img src="/files/version/{{ p.latest_version.id }}" alt="{{ p.sku }}" class="lightbox-trigger" data-index="{{ loop.index0 }}">
+      <div class="body">
+        <div class="sku">{{ p.sku }}</div>
+        <div class="row" style="justify-content: space-between;">
+          {% if p.versions|length > 1 %}<span class="badge badge-role">V{{ p.latest_version.version_num }}</span>{% endif %}
+          {% if p.status.value == "approved" %}<span class="badge badge-approved">Approvata</span>
+          {% elif p.status.value == "rejected" %}<span class="badge badge-rejected">Da correggere</span>
+          {% else %}<span class="badge badge-pending">In attesa</span>{% endif %}
+        </div>
+
+        <div class="actions">
+          <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/status" style="flex:1;">
+            <input type="hidden" name="status" value="approved">
+            <button type="submit" style="width:100%; background: var(--ok);">Approva</button>
+          </form>
+          <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/status" style="flex:1;">
+            <input type="hidden" name="status" value="rejected">
+            <button type="submit" class="danger" style="width:100%;">Da correggere</button>
+          </form>
+        </div>
+
+        {% if p.notes %}
+        <div class="notes-list">
+          {% for n in p.notes %}
+          <div class="note"><b>{{ n.author.name }}:</b> {{ n.body }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <form method="post" action="/batch/{{ batch.id }}/photo/{{ p.id }}/notes" style="margin-top:8px;">
+          <textarea name="body" class="field" rows="2" placeholder="Lascia una nota..." style="resize:vertical;"></textarea>
+          <button type="submit" class="secondary" style="margin-top:6px; width:100%;">Invia nota</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="lightbox" class="lightbox" hidden>
+  <button type="button" class="lightbox-close" aria-label="Chiudi">&times;</button>
+  <button type="button" class="lightbox-nav lightbox-prev" aria-label="Precedente">&#8249;</button>
+  <img id="lightbox-img" src="" alt="">
+  <button type="button" class="lightbox-nav lightbox-next" aria-label="Successiva">&#8250;</button>
+  <div class="lightbox-caption" id="lightbox-caption"></div>
+</div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+  const sources = [{% for p in photos %}"/files/version/{{ p.latest_version.id }}"{% if not loop.last %},{% endif %}{% endfor %}];
+  const skus = [{% for p in photos %}{{ p.sku|tojson }}{% if not loop.last %},{% endif %}{% endfor %}];
+  const lightbox = document.getElementById("lightbox");
+  const img = document.getElementById("lightbox-img");
+  const caption = document.getElementById("lightbox-caption");
+  let current = 0;
+
+  function show(index) {
+    current = (index + sources.length) % sources.length;
+    img.src = sources[current];
+    caption.textContent = skus[current];
+  }
+
+  function open(index) {
+    show(index);
+    lightbox.hidden = false;
+  }
+
+  function close() {
+    lightbox.hidden = true;
+    img.src = "";
+  }
+
+  document.querySelectorAll(".lightbox-trigger").forEach((el) => {
+    el.style.cursor = "zoom-in";
+    el.addEventListener("click", () => open(parseInt(el.dataset.index, 10)));
+  });
+
+  lightbox.querySelector(".lightbox-close").addEventListener("click", close);
+  lightbox.querySelector(".lightbox-prev").addEventListener("click", () => show(current - 1));
+  lightbox.querySelector(".lightbox-next").addEventListener("click", () => show(current + 1));
+  lightbox.addEventListener("click", (e) => { if (e.target === lightbox) close(); });
+
+  document.addEventListener("keydown", (e) => {
+    if (lightbox.hidden) return;
+    if (e.key === "Escape") close();
+    if (e.key === "ArrowLeft") show(current - 1);
+    if (e.key === "ArrowRight") show(current + 1);
+  });
+})();
+</script>
+{% endblock %}
