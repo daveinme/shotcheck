@@ -470,4 +470,5 @@ th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: upp
   position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.92);
   display: flex; align-items: center; justify-content: center;
 }
+.pg-lightbox[hidden] { display: none; }
 .pg-lightbox img { max-width: 90vw; max-height: 90vh; object-fit: contain; }
