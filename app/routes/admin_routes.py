@@ -113,10 +113,11 @@ async def delete_user(
 @router.post("/batches")
 async def create_batch(
     name: str = Form(...),
-    brand_id: int | None = Form(None),
+    brand_id: str | None = Form(None),
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
     name = name.strip()
+    brand_id = int(brand_id) if brand_id else None
     if not brand_id:
         # galleria pubblica: nessun brand, link diretto senza login
         batch = Batch(name=name, brand_id=None, public_token=secrets.token_urlsafe(16), published=True)
