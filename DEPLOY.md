@@ -11,7 +11,7 @@ dig +short lab.dualme.it
 ## 1. Pull e dipendenze
 
 ```bash
-cd /percorso/della/repo/shotcheck   # correggi con il path reale sul server
+cd /var/www/shotcheck
 git pull
 
 # se il venv non esiste ancora:
@@ -60,10 +60,6 @@ pm2 start ecosystem.config.js
 pm2 save
 pm2 startup   # segui l'istruzione stampata per l'avvio al boot del server
 ```
-
-**Prima di lanciare `pm2 start`**, apri `ecosystem.config.js` e correggi il
-campo `cwd` con il path reale della repo sul server (è impostato a
-`/home/deploy/shotcheck` come placeholder).
 
 Per aggiornamenti successivi (dopo un `git pull`):
 
@@ -119,7 +115,7 @@ sudo certbot renew --dry-run
 ## Riepilogo comandi per un aggiornamento futuro
 
 ```bash
-cd /percorso/della/repo/shotcheck
+cd /var/www/shotcheck
 git pull
 venv/bin/pip install -r requirements.txt   # solo se requirements.txt è cambiato
 pm2 restart shotcheck

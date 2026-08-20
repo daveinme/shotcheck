@@ -2,8 +2,7 @@ module.exports = {
   apps: [
     {
       name: "shotcheck",
-      // Percorso assoluto della repo sul server — CORREGGI se diverso
-      cwd: "/home/deploy/shotcheck",
+      cwd: "/var/www/shotcheck",
       script: "venv/bin/uvicorn",
       args: "app.main:app --host 127.0.0.1 --port 8000",
       interpreter: "none",
