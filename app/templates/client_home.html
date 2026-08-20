@@ -19,12 +19,12 @@
 
   <section class="tab-panel" id="tab-raw">
     <div class="panel">
-      <h2>Crea un nuovo lotto</h2>
+      <h2>Crea un nuovo batch</h2>
       <form id="new-raw-batch-form" class="row">
         <input type="text" name="name" id="new-raw-batch-name" class="field" placeholder="es. Consegna settembre" required style="flex:1;">
         <button type="submit">Crea e apri</button>
       </form>
-      <div class="hint" style="margin-top:8px;">Dopo aver creato il lotto potrai trascinare le foto (anche una cartella con sottocartelle) e organizzarle direttamente nella pagina del lotto.</div>
+      <div class="hint" style="margin-top:8px;">Dopo aver creato il batch potrai trascinare le foto (anche una cartella con sottocartelle) e organizzarle direttamente nella pagina del batch.</div>
     </div>
 
     {% if raw_batches %}
@@ -96,7 +96,7 @@ window.SHOTCHECK_TOUR = {
     const fd = new FormData();
     fd.append("name", name);
     const res = await fetch("/raw-batches", { method: "POST", body: fd });
-    if (!res.ok) { alert("Errore nella creazione del lotto. Riprova."); return; }
+    if (!res.ok) { alert("Errore nella creazione del batch. Riprova."); return; }
     const data = await res.json();
     window.location.href = `/raw-batches/${data.id}`;
   });

@@ -31,8 +31,8 @@
         <div class="hint">Bozze in attesa di postproduzione</div>
       </div>
       {% if raw_batch.status.value == "queued" %}
-      <form method="post" action="/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente questo lotto e tutti i suoi file?');">
-        <button type="submit" class="danger">Elimina lotto</button>
+      <form method="post" action="/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente questo batch e tutti i suoi file?');">
+        <button type="submit" class="danger">Elimina batch</button>
       </form>
       {% endif %}
     </div>
