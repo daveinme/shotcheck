@@ -562,7 +562,7 @@ async def add_note(
             f'{user.name} ha scritto una nota su "{photo.sku}" — {batch.name}',
             f"/admin/batch/{batch.id}",
         )
-    else:
+    elif batch.published:
         notify_brand(
             db, batch.brand_id, "note",
             f'{user.name} ha scritto una nota su "{photo.sku}" — {batch.name}',
@@ -629,7 +629,7 @@ async def add_batch_note(
             f'{user.name} ha scritto una nota su "{batch.name}"',
             f"/admin/batch/{batch.id}",
         )
-    else:
+    elif batch.published:
         notify_brand(
             db, batch.brand_id, "note",
             f'{user.name} ha scritto una nota su "{batch.name}"',
