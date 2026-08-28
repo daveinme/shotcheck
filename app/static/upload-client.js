@@ -52,14 +52,20 @@
     if (!montato) { document.addEventListener("DOMContentLoaded", () => disegna(s), { once: true }); return; }
     pannello.hidden = false;
     const fatti = s.voci.filter((v) => v.esito).length;
+    const ko = s.voci.filter((v) => v.esito === "errore" || v.esito === "dubbio").length;
     inVolo = s.voci.length - fatti;
     titolo().textContent = inVolo
       ? `Caricamento ${fatti}/${s.voci.length}`
-      : `Completato: ${fatti} file`;
+      : ko ? `Completato: ${fatti - ko} ok, ${ko} da controllare`
+           : `Completato: ${fatti} file`;
     pannello.querySelector(".sc-up-close").hidden = inVolo > 0;
     lista().innerHTML = s.voci.map((v) => {
-      const stato = v.esito === "ok" ? "✓" : v.esito === "errore" ? "Errore" : v.pct + "%";
-      const cls = v.esito === "ok" ? " sc-up-ok" : v.esito === "errore" ? " sc-up-ko" : "";
+      const stato = v.esito === "ok" ? "✓"
+                  : v.esito === "errore" ? "Errore"
+                  : v.esito === "dubbio" ? "Da verificare"
+                  : v.pct + "%";
+      const cls = v.esito === "ok" ? " sc-up-ok"
+                : (v.esito === "errore" || v.esito === "dubbio") ? " sc-up-ko" : "";
       return `<div class="sc-up-row${cls}"><span class="sc-up-name">${v.nome}</span>` +
              `<span class="sc-up-pct">${stato}</span></div>`;
     }).join("");
@@ -70,6 +76,13 @@
   window.addEventListener("beforeunload", (e) => {
     if (inVolo > 0) { e.preventDefault(); e.returnValue = ""; return ""; }
   });
+
+  // Se il browser termina il worker a meta' coda, la coda su IndexedDB resta
+  // ma nessuno la fa ripartire: questo battito lo risveglia finche' serve.
+  setInterval(() => {
+    if (inVolo > 0 && navigator.serviceWorker.controller)
+      navigator.serviceWorker.controller.postMessage({ tipo: "chiedi-stato" });
+  }, 10000);
 
   const ascoltatori = [];
 
