@@ -502,7 +502,7 @@ async def publish_batch(
 @router.post("/batch/{batch_id}/delete")
 async def delete_batch(
     batch_id: int,
-    db: Session = Depends(get_db), superadmin: User = Depends(require_superadmin),
+    db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:

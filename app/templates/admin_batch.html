@@ -50,11 +50,9 @@
             </form>
           {% endif %}
         {% endif %}
-        {% if staff.role.value == "superadmin" %}
         <form method="post" action="/admin/batch/{{ batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente la galleria \'{{ batch.name }}\' con tutte le foto? {% if batch.published %}È già pubblicata e visibile al cliente. {% endif %}Non è reversibile.');">
           <button type="submit" class="danger">Elimina galleria</button>
         </form>
-        {% endif %}
       </div>
     </div>
   </div>
