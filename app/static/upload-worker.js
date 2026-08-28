@@ -63,6 +63,9 @@ async function eliminaConclusi() {
 }
 
 let inCorso = false;
+// permette di abortire il file attualmente in volo: senza, un annullamento
+// lascerebbe comunque arrivare al server l'ultimo POST gia' partito
+let inVoloController = null;
 
 async function avvisaPagine(msg) {
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
@@ -96,20 +99,26 @@ async function caricaUno(job) {
   await aggiornaJob(job);
   await avvisaPagine(await istantanea());
 
-  let ok = false, uploads = [];
+  let ok = false, uploads = [], annullato = false;
+  inVoloController = new AbortController();
   try {
-    const risp = await fetch(job.url, { method: "POST", body: fd, credentials: "same-origin" });
+    const risp = await fetch(job.url, { method: "POST", body: fd,
+                                        credentials: "same-origin",
+                                        signal: inVoloController.signal });
     ok = risp.ok;
     if (ok) {
       try { uploads = (await risp.json()).uploads || []; } catch (e) { /* risposta non JSON */ }
     }
   } catch (e) {
     ok = false;
+    annullato = e && e.name === "AbortError";
+  } finally {
+    inVoloController = null;
   }
 
   // il file caricato non serve piu': tenerlo in IndexedDB sprecherebbe
   // spazio per tutta la sessione (376 foto sono parecchi GB)
-  job.esito = ok ? "ok" : "errore";
+  job.esito = ok ? "ok" : annullato ? "annullato" : "errore";
   job.pct = 100;
   job.file = null;
   await aggiornaJob(job);
@@ -118,12 +127,16 @@ async function caricaUno(job) {
                        batchKey: job.batchKey, folderId: job.folderId });
 }
 
+let annullaRichiesto = false;
+
 async function svuota() {
   if (inCorso) return;
   inCorso = true;
+  annullaRichiesto = false;
   try {
     for (;;) {
       const tutti = await leggiTutti();
+      if (annullaRichiesto) break;
       const prossimo = tutti.find((j) => !j.esito && j.file && !j.tentato);
       if (!prossimo) break;
       await caricaUno(prossimo);
@@ -166,6 +179,16 @@ self.addEventListener("message", (e) => {
       if (e.source) e.source.postMessage(s); else await avvisaPagine(s);
       // se c'e' lavoro arretrato (worker risvegliato), riprendilo
       await svuota();
+    } else if (m.tipo === "annulla") {
+      // ferma la coda, aborta il file in volo e scarta quelli non partiti.
+      // I file gia' caricati restano sul server: vanno eliminati dalla pagina.
+      annullaRichiesto = true;
+      if (inVoloController) inVoloController.abort();
+      const tutti = await leggiTutti();
+      for (const j of tutti) {
+        if (!j.esito) { j.esito = "annullato"; j.file = null; await aggiornaJob(j); }
+      }
+      await avvisaPagine(await istantanea());
     } else if (m.tipo === "pulisci") {
       await eliminaConclusi();
       await avvisaPagine(await istantanea());

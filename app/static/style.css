@@ -505,3 +505,11 @@ th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: upp
 .sc-up-pct { flex-shrink: 0; font-weight: 700; }
 .sc-up-row.sc-up-ok .sc-up-pct { color: var(--ok); }
 .sc-up-row.sc-up-ko .sc-up-pct { color: var(--danger); }
+.sc-up-stop {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  font-size: 11px; cursor: pointer; padding: 2px 8px; border-radius: 5px;
+}
+.sc-up-stop:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+.sc-up-stop[hidden] { display: none; }
+.sc-up-row.sc-up-ann .sc-up-pct { color: var(--muted); }
+.sc-up-row.sc-up-ann .sc-up-name { text-decoration: line-through; opacity: 0.6; }
