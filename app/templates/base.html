@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <!-- deve stare qui: gli script delle pagine chiamano ShotcheckUpload
+       al caricamento, in fondo al body sarebbe gia' troppo tardi -->
+  <script src="/static/upload-client.js?v={{ asset_version }}"></script>
 </head>
 <body>
 {% block body %}{% endblock %}

@@ -133,13 +133,6 @@
   </div>
 </div>
 
-<div id="upload-queue-panel" class="upload-queue-panel" hidden>
-  <div class="upload-queue-header">
-    <span id="upload-queue-title">Caricamento…</span>
-    <button type="button" id="upload-queue-toggle" class="upload-queue-toggle" aria-label="Comprimi">–</button>
-  </div>
-  <div id="upload-queue-list" class="upload-queue-list"></div>
-</div>
 
 {% endblock %}
 
@@ -563,77 +556,22 @@
     if (files.length) enqueueFiles(files, currentFolderId);
   });
 
-  // ── Coda di upload in background ─────────────────────────────────────────
-  const queuePanel = document.getElementById("upload-queue-panel");
-  const queueTitle = document.getElementById("upload-queue-title");
-  const queueList = document.getElementById("upload-queue-list");
-  document.getElementById("upload-queue-toggle").addEventListener("click", () => {
-    const collapsed = queueList.style.display === "none";
-    queueList.style.display = collapsed ? "" : "none";
-    document.getElementById("upload-queue-toggle").textContent = collapsed ? "–" : "+";
-  });
-
-  function uploadOneFile(file, folderId) {
-    return new Promise((resolve) => {
-      const row = document.createElement("div");
-      row.className = "upload-queue-row";
-      row.innerHTML = `<span class="upload-queue-name">${file.name}</span><span class="upload-queue-pct">0%</span>`;
-      queueList.appendChild(row);
-      const pctEl = row.querySelector(".upload-queue-pct");
-
-      const fd = new FormData();
-      fd.append("files", file);
-      if (folderId) fd.append("folder_id", folderId);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `/admin/batch/${BATCH_ID}/upload`);
-      xhr.upload.addEventListener("progress", (ev) => {
-        if (!ev.lengthComputable) return;
-        pctEl.textContent = Math.round((ev.loaded / ev.total) * 100) + "%";
-      });
-      xhr.addEventListener("loadend", () => {
-        row.classList.add(xhr.status >= 200 && xhr.status < 400 ? "upload-queue-done" : "upload-queue-failed");
-        pctEl.textContent = xhr.status >= 200 && xhr.status < 400 ? "✓" : "Errore";
-        resolve();
-      });
-      xhr.send(fd);
+  // ── Coda di upload: vive nel service worker ──────────────────────────────
+  // Il caricamento prosegue anche navigando altrove (vedi upload-worker.js);
+  // il pannello di avanzamento e' globale, definito in upload-client.js.
+  function enqueueFiles(files, folderId) {
+    ShotcheckUpload.accoda(files, {
+      url: `/admin/batch/${BATCH_ID}/upload`,
+      folderId,
+      batchKey: `batch-${BATCH_ID}`,
     });
   }
 
-  // Coda unica per l'intera pagina: se un upload è già in corso, i nuovi
-  // file si accodano invece di avviare una seconda scrittura in parallelo
-  // (SQLite non tollera due INSERT concorrenti -> "database is locked").
-  const uploadQueue = [];
-  const touchedFolders = new Set();
-  let queueRunning = false;
-
-  function enqueueFiles(files, folderId) {
-    for (const file of files) uploadQueue.push({ file, folderId });
-    touchedFolders.add(folderKey(folderId));
-    if (!queueRunning) runQueue();
-  }
-
-  async function runQueue() {
-    queueRunning = true;
-    queuePanel.hidden = false;
-    queueList.style.display = "";
-    document.getElementById("upload-queue-toggle").textContent = "–";
-
-    let done = 0;
-    while (uploadQueue.length > 0) {
-      const total = done + uploadQueue.length;
-      queueTitle.textContent = `Caricamento ${done}/${total}`;
-      const { file, folderId } = uploadQueue.shift();
-      await uploadOneFile(file, folderId);
-      done++;
-    }
-    queueTitle.textContent = `Completato: ${done} file`;
-    queueRunning = false;
-
-    for (const key of touchedFolders) delete photoCache[key];
-    touchedFolders.clear();
-    render();
-  }
+  ShotcheckUpload.alTermine((m) => {
+    if (m.batchKey !== `batch-${BATCH_ID}` || !m.ok) return;
+    delete photoCache[folderKey(m.folderId ?? null)];
+    if ((m.folderId ?? null) === currentFolderId) render();
+  });
 
   // ── Modal "nota generale" — legata alla cartella corrente ────────────────
   const noteModal = document.getElementById("note-modal");

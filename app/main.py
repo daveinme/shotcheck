@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -20,6 +21,16 @@ app = FastAPI(title="Shotcheck")
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Il service worker DEVE essere servito dalla root: da /static/ avrebbe
+# scope /static/ e non controllerebbe le pagine del sito.
+@app.get("/upload-worker.js", include_in_schema=False)
+async def upload_worker():
+    return FileResponse(STATIC_DIR / "upload-worker.js",
+                        media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache",
+                                 "Service-Worker-Allowed": "/"})
+
 
 app.include_router(auth_routes.router)
 app.include_router(admin_routes.router)
