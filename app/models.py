@@ -168,6 +168,12 @@ class RawBatch(Base):
     brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False)
     name = Column(String, nullable=False)
     status = Column(Enum(RawUploadStatus), nullable=False, default=RawUploadStatus.queued)
+    # Finché è False il lotto è una bozza privata del brand: lo staff non lo
+    # vede. Un brand può metterci giorni a raccogliere tutti gli scatti e
+    # vuole caricarli man mano; senza questo flag lo staff vedeva il lotto
+    # incompleto e lo prendeva in carico troppo presto.
+    published = Column(Boolean, default=False)
+    published_at = Column(DateTime, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 

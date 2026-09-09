@@ -50,6 +50,7 @@
 
   <div class="panel">
     <nav id="fb-breadcrumb" class="fb-breadcrumb" style="margin-bottom:14px;"></nav>
+      <span id="fb-count" class="hint" style="margin-left:10px; white-space:nowrap;"></span>
     <div id="fb-folders" class="fb-grid fb-folders-row"></div>
     <div id="fb-items" class="fb-grid"></div>
   </div>
@@ -78,6 +79,7 @@
   const RAW_BATCH_ID = {{ raw_batch.id }};
   const CURRENT_USER_ID = {{ staff.id }};
   const batchNameEsc = {{ raw_batch.name|tojson }};
+  let TOTAL_FILES = {{ raw_batch.uploads|length }};
   const allFolders = {{ all_folders_json|safe }};
   const rootUploads = {{ root_uploads_json|safe }};
   const rootNotes = {{ root_notes_json|safe }};
@@ -107,6 +109,7 @@
     const data = await res.json();
     uploadCache[key] = data.uploads;
     noteCache[key] = data.notes;
+    if (typeof data.total_files === "number") TOTAL_FILES = data.total_files;
   }
 
   async function fetchUploads(folderId) {
@@ -171,6 +174,20 @@
     });
   }
 
+  // Contatore file della cartella aperta (+ totale del batch quando si è in
+  // una sottocartella, così il numero complessivo resta sempre leggibile).
+  function renderCount(nHere, nFolders) {
+    const el = document.getElementById("fb-count");
+    if (!el) return;
+    const tot = TOTAL_FILES;
+    const parts = [];
+    parts.push(nHere === 1 ? "1 file" : `${nHere} file`);
+    if (nFolders > 0) parts.push(nFolders === 1 ? "1 cartella" : `${nFolders} cartelle`);
+    let txt = parts.join(" · ");
+    if (currentFolderId !== null && tot !== nHere) txt += ` · ${tot} in tutto il batch`;
+    el.textContent = txt;
+  }
+
   async function render() {
     renderBreadcrumb();
     const foldersGrid = document.getElementById("fb-folders");
@@ -187,6 +204,7 @@
       itemsGrid.innerHTML = uploads.map(uploadTileHTML).join("");
     }
     wireGridHandlers();
+    renderCount(uploads.length, subfolders.length);
 
     const folder = folderById(currentFolderId);
     document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";

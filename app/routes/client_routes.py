@@ -2,6 +2,7 @@ import io
 import json
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, File, HTTPException
@@ -115,13 +116,40 @@ async def delete_client_raw_batch(
     db: Session = Depends(get_db), user: User = Depends(require_login),
 ):
     raw_batch = _require_client_raw_batch(raw_batch_id, user, db)
-    if raw_batch.status != RawUploadStatus.queued:
-        raise HTTPException(400, "Puoi eliminare solo i lotti ancora in coda")
     for up in raw_batch.uploads:
         delete_raw_photo(raw_batch.id, up.stored_filename)
     db.delete(raw_batch)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
+
+
+@router.post("/raw-batches/{raw_batch_id}/publish")
+async def publish_client_raw_batch(
+    raw_batch_id: int,
+    db: Session = Depends(get_db), user: User = Depends(require_login),
+):
+    """Il brand dichiara il lotto completo: da qui in poi lo staff lo vede.
+
+    Prima di questo passaggio il lotto è una bozza privata — il brand può
+    caricare gli scatti man mano che arrivano, anche nell'arco di giorni,
+    senza che lo staff lo prenda in carico ancora incompleto.
+    """
+    raw_batch = _require_client_raw_batch(raw_batch_id, user, db)
+    if raw_batch.published:
+        return RedirectResponse(url=f"/raw-batches/{raw_batch.id}", status_code=303)
+    if not raw_batch.uploads:
+        raise HTTPException(400, "Carica almeno una foto prima di pubblicare")
+
+    raw_batch.published = True
+    raw_batch.published_at = datetime.utcnow()
+    notify_staff(
+        db, "raw_batch",
+        f'{raw_batch.brand.name} ha pubblicato il lotto "{raw_batch.name}" '
+        f"({len(raw_batch.uploads)} file)",
+        f"/admin/raw-batches/{raw_batch.id}",
+    )
+    db.commit()
+    return RedirectResponse(url=f"/raw-batches/{raw_batch.id}", status_code=303)
 
 
 @router.post("/raw-batches")
@@ -157,6 +185,7 @@ async def raw_root_contents(
     return JSONResponse({
         "uploads": [_raw_upload_json(u) for u in uploads],
         "notes": [_raw_note_json(n) for n in notes],
+        "total_files": len(raw_batch.uploads),
     })
 
 
@@ -179,6 +208,7 @@ async def raw_folder_contents(
     return JSONResponse({
         "uploads": [_raw_upload_json(u) for u in uploads],
         "notes": [_raw_note_json(n) for n in notes],
+        "total_files": len(raw_batch.uploads),
     })
 
 
@@ -208,11 +238,14 @@ async def add_raw_note(
     db.add(note)
 
     if user.role == UserRole.user:
-        notify_staff(
-            db, "note",
-            f'{user.name} ha scritto una nota su "{raw_batch.name}"',
-            f"/admin/raw-batches/{raw_batch.id}",
-        )
+        # Solo se pubblicato: una nota su una bozza rivelerebbe allo staff un
+        # lotto che per lui non è ancora visibile, con un link che dà 404.
+        if raw_batch.published:
+            notify_staff(
+                db, "note",
+                f'{user.name} ha scritto una nota su "{raw_batch.name}"',
+                f"/admin/raw-batches/{raw_batch.id}",
+            )
     else:
         notify_brand(
             db, raw_batch.brand_id, "note",
@@ -439,6 +472,7 @@ async def client_root_contents(
     return JSONResponse({
         "photos": [_client_photo_json(p) for p in photos],
         "notes": [_note_json(n) for n in notes],
+        "total_files": len(batch.photos),
     })
 
 
@@ -461,6 +495,7 @@ async def client_folder_contents(
     return JSONResponse({
         "photos": [_client_photo_json(p) for p in photos],
         "notes": [_note_json(n) for n in notes],
+        "total_files": len(batch.photos),
     })
 
 

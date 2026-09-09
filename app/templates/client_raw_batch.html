@@ -24,17 +24,40 @@
     <span class="current">{{ raw_batch.name }}</span>
   </nav>
 
+  {% if not raw_batch.published %}
+  <div class="panel" style="border-left:3px solid #f0a020;">
+    <b>Questo lotto è ancora una bozza.</b>
+    <div class="hint" style="margin-top:4px;">
+      Puoi caricare le foto poco per volta, anche in giorni diversi: il nostro
+      team non lo vede finché non premi <b>Pubblica lotto</b>. Pubblicalo quando
+      hai caricato tutto.
+    </div>
+  </div>
+  {% endif %}
+
   <div class="panel">
     <div class="row" style="justify-content: space-between; align-items:flex-start;">
       <div>
         <h1 style="margin-bottom:4px;">{{ raw_batch.name }}</h1>
-        <div class="hint">Bozze in attesa di postproduzione</div>
+        <div class="hint">
+          {% if raw_batch.published %}
+            Pubblicato — il nostro team lo sta lavorando
+          {% else %}
+            Bozza privata — solo tu la vedi
+          {% endif %}
+        </div>
       </div>
-      {% if raw_batch.status.value == "queued" %}
-      <form method="post" action="/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente questo batch e tutti i suoi file?');">
-        <button type="submit" class="danger">Elimina batch</button>
-      </form>
-      {% endif %}
+      <div class="row" style="gap:8px; align-items:center;">
+        {% if not raw_batch.published %}
+        <form method="post" action="/raw-batches/{{ raw_batch.id }}/publish"
+              onsubmit="return confirm('Pubblicare il lotto? Da questo momento il nostro team lo vedrà e potrà iniziare a lavorarlo.');">
+          <button type="submit" class="primary">Pubblica lotto</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/raw-batches/{{ raw_batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente questo batch e tutti i suoi file?');">
+          <button type="submit" class="danger">Elimina batch</button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -49,6 +72,7 @@
   <div class="panel">
     <div class="filebrowser-toolbar">
       <nav id="fb-breadcrumb" class="fb-breadcrumb"></nav>
+      <span id="fb-count" class="hint" style="margin-left:10px; white-space:nowrap;"></span>
       <div class="row">
         <button type="button" id="priority-btn" class="secondary" hidden>Segna cartella come urgente</button>
         <button type="button" id="new-folder-btn" class="secondary">Nuova cartella</button>
@@ -87,6 +111,7 @@
   const RAW_BATCH_ID = {{ raw_batch.id }};
   const CURRENT_USER_ID = {{ user.id }};
   const batchNameEsc = {{ raw_batch.name|tojson }};
+  let TOTAL_FILES = {{ raw_batch.uploads|length }};
   const allFolders = {{ all_folders_json|safe }};
   const rootUploads = {{ root_uploads_json|safe }};
   const rootNotes = {{ root_notes_json|safe }};
@@ -116,6 +141,7 @@
     const data = await res.json();
     uploadCache[key] = data.uploads;
     noteCache[key] = data.notes;
+    if (typeof data.total_files === "number") TOTAL_FILES = data.total_files;
   }
 
   async function fetchUploads(folderId) {
@@ -193,6 +219,20 @@
     btn.className = folder.priority === "high" ? "danger" : "secondary";
   }
 
+  // Contatore file della cartella aperta (+ totale del batch quando si è in
+  // una sottocartella, così il numero complessivo resta sempre leggibile).
+  function renderCount(nHere, nFolders) {
+    const el = document.getElementById("fb-count");
+    if (!el) return;
+    const tot = TOTAL_FILES;
+    const parts = [];
+    parts.push(nHere === 1 ? "1 file" : `${nHere} file`);
+    if (nFolders > 0) parts.push(nFolders === 1 ? "1 cartella" : `${nFolders} cartelle`);
+    let txt = parts.join(" · ");
+    if (currentFolderId !== null && tot !== nHere) txt += ` · ${tot} in tutto il batch`;
+    el.textContent = txt;
+  }
+
   async function render() {
     renderBreadcrumb();
     updatePriorityButton();
@@ -210,6 +250,7 @@
       itemsGrid.innerHTML = uploads.map(uploadTileHTML).join("");
     }
     wireGridHandlers();
+    renderCount(uploads.length, subfolders.length);
 
     const folder = folderById(currentFolderId);
     document.getElementById("notes-panel-title").textContent = folder ? `Note — ${folder.name}` : "Note generali";

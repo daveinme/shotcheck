@@ -36,9 +36,13 @@
             <div class="sku">{{ rb.name }}{% if rb.has_high_priority %} <span class="badge badge-rejected">Urgente</span>{% endif %}</div>
             <div class="hint">{{ rb.uploads|length }} file · caricato il {{ rb.uploaded_at.strftime("%d/%m/%Y") }}</div>
           </div>
+          {% if not rb.published %}
+          <span class="badge badge-draft">Bozza · non inviata</span>
+          {% else %}
           <span class="badge {% if rb.status.value == 'queued' %}badge-draft{% elif rb.status.value == 'processing' %}badge-role{% else %}badge-approved{% endif %}">
             {% if rb.status.value == "queued" %}In coda{% elif rb.status.value == "processing" %}In lavorazione{% else %}Pubblicato{% endif %}
           </span>
+          {% endif %}
         </div>
       </a>
       {% endfor %}

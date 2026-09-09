@@ -37,7 +37,11 @@ async def admin_home(request: Request, db: Session = Depends(get_db), staff: Use
     brands = db.query(Brand).order_by(Brand.name).all()
     users = db.query(User).order_by(User.role, User.name).all()
     batches = db.query(Batch).order_by(Batch.created_at.desc()).all()
-    pending_raw_count = db.query(RawBatch).filter(RawBatch.status != "published").count()
+    pending_raw_count = (
+        db.query(RawBatch)
+        .filter(RawBatch.status != "published", RawBatch.published == True)
+        .count()
+    )
     return templates.TemplateResponse("admin_home.html", {
         "request": request, "staff": staff, "brands": brands, "users": users, "batches": batches,
         "pending_raw_count": pending_raw_count,
@@ -243,6 +247,7 @@ async def root_contents(
     return JSONResponse({
         "photos": [_photo_json(p) for p in photos],
         "notes": [_note_json(n) for n in notes],
+        "total_files": len(batch.photos),
     })
 
 
@@ -264,6 +269,7 @@ async def folder_contents(
     return JSONResponse({
         "photos": [_photo_json(p) for p in photos],
         "notes": [_note_json(n) for n in notes],
+        "total_files": len(batch.photos),
     })
 
 
@@ -517,11 +523,28 @@ async def delete_batch(
 
 # ── Bozze (lotti di foto grezze caricati dal brand, non ancora postprodotte) ─
 
+def _require_published_raw_batch(raw_batch_id: int, db: Session) -> RawBatch:
+    """Recupera un lotto grezzo visibile allo staff.
+
+    Un lotto con published=False è una bozza che il brand sta ancora
+    componendo: per lo staff non esiste (404, non 403 — l'esistenza stessa
+    del lotto è informazione del brand). L'unica eccezione sono i lotti
+    creati prima di questo campo, che restano visibili: la migrazione li
+    marca published=1.
+    """
+    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
+    if not raw_batch or not raw_batch.published:
+        raise HTTPException(404, "Lotto non trovato")
+    return raw_batch
+
+
 @router.get("/raw-uploads", response_class=HTMLResponse)
 async def raw_uploads_home(request: Request, db: Session = Depends(get_db), staff: User = Depends(require_staff)):
     raw_batches = (
         db.query(RawBatch)
-        .filter(RawBatch.status != "published")
+        # published == False: bozza ancora in composizione dal brand, invisibile
+        # allo staff finché il brand non la pubblica esplicitamente.
+        .filter(RawBatch.status != "published", RawBatch.published == True)
         .order_by(RawBatch.uploaded_at.asc())
         .all()
     )
@@ -538,9 +561,7 @@ async def admin_raw_batch_detail(
     raw_batch_id: int, request: Request,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
-    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
-    if not raw_batch:
-        raise HTTPException(404, "Lotto non trovato")
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
 
     all_folders = sorted(raw_batch.folders, key=lambda f: f.name)
     root_uploads = sorted((u for u in raw_batch.uploads if u.folder_id is None), key=lambda u: u.filename)
@@ -567,9 +588,7 @@ async def admin_raw_root_contents(
     raw_batch_id: int,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
-    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
-    if not raw_batch:
-        raise HTTPException(404, "Lotto non trovato")
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
     uploads = sorted((u for u in raw_batch.uploads if u.folder_id is None), key=lambda u: u.filename)
     notes = (
         db.query(RawNote)
@@ -580,6 +599,7 @@ async def admin_raw_root_contents(
     return JSONResponse({
         "uploads": [_raw_upload_json(u) for u in uploads],
         "notes": [_raw_note_json(n) for n in notes],
+        "total_files": len(raw_batch.uploads),
     })
 
 
@@ -601,6 +621,7 @@ async def admin_raw_folder_contents(
     return JSONResponse({
         "uploads": [_raw_upload_json(u) for u in uploads],
         "notes": [_raw_note_json(n) for n in notes],
+        "total_files": len(raw_batch.uploads),
     })
 
 
@@ -609,9 +630,7 @@ async def download_raw_batch_zip(
     raw_batch_id: int,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
-    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
-    if not raw_batch:
-        raise HTTPException(404, "Lotto non trovato")
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
@@ -633,9 +652,7 @@ async def set_raw_batch_status(
     raw_batch_id: int, status: str = Form(...),
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
-    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
-    if not raw_batch:
-        raise HTTPException(404, "Lotto non trovato")
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
     if status not in ("queued", "processing", "published"):
         raise HTTPException(400, "Stato non valido")
 
@@ -657,9 +674,7 @@ async def delete_raw_batch(
     raw_batch_id: int,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
-    raw_batch = db.query(RawBatch).filter(RawBatch.id == raw_batch_id).first()
-    if not raw_batch:
-        raise HTTPException(404, "Lotto non trovato")
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
     for up in raw_batch.uploads:
         delete_raw_photo(raw_batch.id, up.stored_filename)
     db.delete(raw_batch)
