@@ -1,9 +1,9 @@
-import io
 import json
 import uuid
-import zipfile
 from datetime import datetime
 from pathlib import Path
+
+from zipstream import ZipStream
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -15,7 +15,10 @@ from app.db import get_db
 from app.mailer import send_admin_digest
 from app.models import User, UserRole, Batch, Photo, PhotoFolder, Note, RawBatch, RawFolder, RawUpload, RawUploadStatus, RawNote, Notification
 from app.notifications import notify_brand, notify_staff
-from app.storage import get_photo_bytes, upload_raw_photo, delete_raw_photo
+from app.storage import (
+    upload_raw_photo, delete_raw_photo,
+    iter_photo_chunks, photo_size,
+)
 from app.templates_env import templates
 
 router = APIRouter()
@@ -481,7 +484,7 @@ async def client_folder_contents(
     batch_id: int, folder_id: int,
     db: Session = Depends(get_db), user: User = Depends(require_login),
 ):
-    _require_client_batch(batch_id, user, db)
+    batch = _require_client_batch(batch_id, user, db)
     folder = db.query(PhotoFolder).filter(PhotoFolder.id == folder_id, PhotoFolder.batch_id == batch_id).first()
     if not folder:
         raise HTTPException(404, "Cartella non trovata")
@@ -507,20 +510,27 @@ async def download_batch_zip(
     batch = _require_client_batch(batch_id, user, db)
     photos = sorted(batch.photos, key=lambda p: p.sku)
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
-        for photo in photos:
-            version = photo.latest_version
-            if not version:
-                continue
-            content = get_photo_bytes(batch.id, version.filename)
-            zf.writestr(f"{photo.sku}{'.' + version.filename.rsplit('.', 1)[-1]}", content)
-    buffer.seek(0)
+    # L'archivio viene generato in streaming: ogni file passa da R2 al client a
+    # blocchi, senza che né i file né lo ZIP finiscano interamente in RAM.
+    zs = ZipStream(sized=True)
+    for photo in photos:
+        version = photo.latest_version
+        if not version:
+            continue
+        arcname = f"{photo.sku}{'.' + version.filename.rsplit('.', 1)[-1]}"
+        zs.add(
+            iter_photo_chunks(batch.id, version.filename),
+            arcname,
+            size=photo_size(batch.id, version.filename),
+        )
 
     safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in batch.name).strip()
     return StreamingResponse(
-        buffer, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+        zs, media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}.zip"',
+            "Content-Length": str(len(zs)),
+        },
     )
 
 

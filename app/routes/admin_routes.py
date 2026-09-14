@@ -1,9 +1,9 @@
-import io
 import json
 import secrets
-import zipfile
 from datetime import datetime
 from pathlib import Path
+
+from zipstream import ZipStream
 
 from fastapi import APIRouter, Depends, Form, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -19,8 +19,8 @@ from app.models import (
 )
 from app.notifications import notify_brand
 from app.storage import (
-    upload_photo, delete_photo as storage_delete_photo, get_photo_bytes,
-    get_raw_photo_bytes, delete_raw_photo,
+    upload_photo, delete_photo as storage_delete_photo, delete_raw_photo,
+    iter_photo_chunks, photo_size, iter_raw_photo_chunks, raw_photo_size,
 )
 from app.templates_env import templates
 
@@ -368,22 +368,28 @@ async def download_batch_zip(
         raise HTTPException(404, "Batch non trovato")
     photos = sorted(batch.photos, key=lambda p: p.sku)
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
-        for photo in photos:
-            version = photo.latest_version
-            if not version:
-                continue
-            content = get_photo_bytes(batch.id, version.filename)
-            folder_path = "/".join(f.name for f in _folder_breadcrumb(photo.folder))
-            arcname = f"{folder_path}/{photo.sku}" if folder_path else photo.sku
-            zf.writestr(f"{arcname}{'.' + version.filename.rsplit('.', 1)[-1]}", content)
-    buffer.seek(0)
+    # Streaming: i file passano da R2 al client a blocchi, senza costruire
+    # l'intero archivio in memoria.
+    zs = ZipStream(sized=True)
+    for photo in photos:
+        version = photo.latest_version
+        if not version:
+            continue
+        folder_path = "/".join(f.name for f in _folder_breadcrumb(photo.folder))
+        arcname = f"{folder_path}/{photo.sku}" if folder_path else photo.sku
+        zs.add(
+            iter_photo_chunks(batch.id, version.filename),
+            f"{arcname}{'.' + version.filename.rsplit('.', 1)[-1]}",
+            size=photo_size(batch.id, version.filename),
+        )
 
     safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in batch.name).strip()
     return StreamingResponse(
-        buffer, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+        zs, media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}.zip"',
+            "Content-Length": str(len(zs)),
+        },
     )
 
 
@@ -608,6 +614,7 @@ async def admin_raw_folder_contents(
     raw_batch_id: int, folder_id: int,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
     folder = db.query(RawFolder).filter(RawFolder.id == folder_id, RawFolder.raw_batch_id == raw_batch_id).first()
     if not folder:
         raise HTTPException(404, "Cartella non trovata")
@@ -632,18 +639,23 @@ async def download_raw_batch_zip(
 ):
     raw_batch = _require_published_raw_batch(raw_batch_id, db)
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
-        for up in raw_batch.uploads:
-            content = get_raw_photo_bytes(raw_batch.id, up.stored_filename)
-            arcname = f"{up.folder.name}/{up.filename}" if up.folder else up.filename
-            zf.writestr(arcname, content)
-    buffer.seek(0)
+    # Streaming: è il caso critico, i raw sono spesso TIFF da decine di MB.
+    zs = ZipStream(sized=True)
+    for up in raw_batch.uploads:
+        arcname = f"{up.folder.name}/{up.filename}" if up.folder else up.filename
+        zs.add(
+            iter_raw_photo_chunks(raw_batch.id, up.stored_filename),
+            arcname,
+            size=raw_photo_size(raw_batch.id, up.stored_filename),
+        )
 
     safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in raw_batch.name).strip()
     return StreamingResponse(
-        buffer, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.zip"'},
+        zs, media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}.zip"',
+            "Content-Length": str(len(zs)),
+        },
     )
 
 

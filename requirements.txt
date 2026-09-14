@@ -10,3 +10,4 @@ pillow==10.4.0
 sendgrid==6.11.0
 python-dotenv==1.0.1
 boto3==1.35.36
+zipstream-ng==1.9.3
