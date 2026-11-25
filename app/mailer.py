@@ -37,8 +37,14 @@ def _send_smtp(to: str, subject: str, html: str) -> None:
     msg.set_content("Apri questa email con un client che legge l'HTML.")
     msg.add_alternative(html, subtype="html")
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
-            smtp.starttls()
+        # 465 = SSL dall'inizio (es. Aruba smtps.aruba.it), 587 = STARTTLS (es. Gmail)
+        if SMTP_PORT == 465:
+            smtp_conn = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=20)
+        else:
+            smtp_conn = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20)
+        with smtp_conn as smtp:
+            if SMTP_PORT != 465:
+                smtp.starttls()
             if SMTP_USER:
                 smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.send_message(msg)
@@ -57,6 +63,13 @@ def _send_ntfy(title: str, body: str, link: str) -> None:
         urllib.request.urlopen(req, timeout=10).close()
     except Exception:
         logger.exception("Invio ntfy fallito: %s", title)
+
+
+def _send_admins(subject: str, html: str) -> None:
+    """ADMIN_EMAIL può contenere più indirizzi separati da virgola."""
+    for addr in (a.strip() for a in ADMIN_EMAIL.split(",")):
+        if addr:
+            _send(addr, subject, html)
 
 
 def send_batch_published(client_email: str, client_name: str, batch_name: str, batch_id: int) -> None:
@@ -82,7 +95,7 @@ def send_admin_digest(batch_name: str, batch_id: int, events: list[dict]) -> Non
     <ul>{rows}</ul>
     <p><a href="{link}">Apri il batch</a></p>
     """
-    _send(ADMIN_EMAIL, f"Aggiornamenti revisione — {batch_name}", html)
+    _send_admins(f"Aggiornamenti revisione — {batch_name}", html)
 
 
 def send_raw_batch_published(brand_name: str, batch_name: str, n_files: int, raw_batch_id: int) -> None:
@@ -96,5 +109,5 @@ def send_raw_batch_published(brand_name: str, batch_name: str, n_files: int, raw
         <p><b>{brand_name}</b> ha pubblicato il lotto <b>{batch_name}</b> ({n_files} file).</p>
         <p><a href="{link}">Apri il lotto</a></p>
         """
-        _send(ADMIN_EMAIL, subject, html)
+        _send_admins(subject, html)
     _send_ntfy(subject, f"{n_files} file pronti da lavorare", link)
