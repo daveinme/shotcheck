@@ -9,8 +9,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import RawBatch
-from app.storage import delete_raw_photo
+from app.models import Batch, RawBatch
+from app.storage import delete_photo, delete_raw_photo
 
 logger = logging.getLogger("shotcheck")
 
@@ -33,5 +33,29 @@ def purge_raw_files(db: Session, raw_batch: RawBatch) -> int:
     raw_batch.files_deleted_count = (raw_batch.files_deleted_count or 0) + deleted
     if failed == 0:
         raw_batch.files_deleted_at = datetime.utcnow()
+    db.commit()
+    return deleted
+
+
+def purge_batch_files(db: Session, batch: Batch) -> int:
+    """Elimina da R2 tutte le versioni delle foto di un batch editato.
+    Le righe Photo/PhotoVersion/Note restano (SKU, stati, note come storico):
+    le pagine del batch, i download e /files/version rispondono "file
+    eliminati" quando batch.files_deleted_at è valorizzato. Se qualche file
+    non si cancella il batch non viene segnato: ripremendo si riprova
+    (cancellare su R2 una chiave già assente non dà errore)."""
+    deleted = 0
+    failed = 0
+    for photo in batch.photos:
+        for v in photo.versions:
+            try:
+                delete_photo(batch.id, v.filename)
+                deleted += 1
+            except Exception:
+                failed += 1
+                logger.exception("R2: eliminazione fallita batch %s/%s", batch.id, v.filename)
+    if failed == 0:
+        batch.files_deleted_at = datetime.utcnow()
+        batch.files_deleted_count = deleted
     db.commit()
     return deleted

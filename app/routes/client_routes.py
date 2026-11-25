@@ -445,6 +445,10 @@ async def client_batch_detail(
     db: Session = Depends(get_db), user: User = Depends(require_login),
 ):
     batch = _require_client_batch(batch_id, user, db)
+    if batch.files_deleted_at:
+        return templates.TemplateResponse("batch_files_deleted.html", {
+            "request": request, "batch": batch, "who": user, "is_staff": False,
+        })
 
     all_folders = sorted(batch.folders, key=lambda f: f.name)
     root_photos = sorted((p for p in batch.photos if p.folder_id is None), key=lambda p: p.sku)
@@ -514,6 +518,8 @@ async def download_batch_zip(
     db: Session = Depends(get_db), user: User = Depends(require_login),
 ):
     batch = _require_client_batch(batch_id, user, db)
+    if batch.files_deleted_at:
+        raise HTTPException(410, "Le foto di questo batch sono state eliminate")
     photos = sorted(batch.photos, key=lambda p: p.sku)
 
     # L'archivio viene generato in streaming: ogni file passa da R2 al client a
@@ -753,6 +759,8 @@ async def public_gallery(
     batch = db.query(Batch).filter(Batch.public_token == token, Batch.published == True).first()  # noqa: E712
     if not batch:
         raise HTTPException(404, "Galleria non trovata")
+    if batch.files_deleted_at:
+        raise HTTPException(410, "Questa galleria non è più disponibile")
     photos = sorted(batch.photos, key=lambda p: p.sku)
     return templates.TemplateResponse("public_gallery.html", {
         "request": request, "batch": batch, "photos": photos,

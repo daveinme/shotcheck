@@ -53,6 +53,9 @@
         <form method="post" action="/admin/batch/{{ batch.id }}/delete" onsubmit="return confirm('Eliminare definitivamente la galleria \'{{ batch.name }}\' con tutte le foto? {% if batch.published %}È già pubblicata e visibile al cliente. {% endif %}Non è reversibile.');">
           <button type="submit" class="danger">Elimina galleria</button>
         </form>
+        <form method="post" action="/admin/batch/{{ batch.id }}/purge-files" onsubmit="return confirm('Eliminare da R2 le foto di \'{{ batch.name }}\'? Il batch resta in lista con SKU, stati e note, ma le foto non saranno più visibili né scaricabili, nemmeno dal cliente. Non è reversibile.');">
+          <button type="submit" class="danger">Elimina solo i file</button>
+        </form>
       </div>
     </div>
   </div>

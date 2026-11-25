@@ -1,4 +1,5 @@
-"""Aggiunge raw_batches.closed_at / files_deleted_at / files_deleted_count.
+"""Aggiunge raw_batches.closed_at / files_deleted_at / files_deleted_count
+e batches.files_deleted_at / files_deleted_count.
 
 I lotti già chiusi restano con closed_at nullo: non entrano nella
 cancellazione automatica, si svuotano solo a mano dalla pagina admin
@@ -26,6 +27,13 @@ for name, sql_type in (("closed_at", "DATETIME"), ("files_deleted_at", "DATETIME
     if name not in cols:
         cur.execute(f"ALTER TABLE raw_batches ADD COLUMN {name} {sql_type}")
         added.append(name)
+
+# Batch editati: eliminazione dei soli file (scheda conservata)
+bcols = {row[1] for row in cur.execute("PRAGMA table_info(batches)")}
+for name, sql_type in (("files_deleted_at", "DATETIME"), ("files_deleted_count", "INTEGER")):
+    if name not in bcols:
+        cur.execute(f"ALTER TABLE batches ADD COLUMN {name} {sql_type}")
+        added.append(f"batches.{name}")
 conn.commit()
 conn.close()
 print("Colonne aggiunte:", ", ".join(added) if added else "nessuna (già presenti)")

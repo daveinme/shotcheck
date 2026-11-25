@@ -4,6 +4,7 @@
 <div class="topbar">
   <div class="brand">{{ app_name }}</div>
   <div class="row">
+    <a href="/admin/raw-uploads" class="btn-link">Bozze RAW</a>
     <span class="who">{{ staff.name }} · <span class="badge badge-role">{{ staff.role.value }}</span></span>
     {% include "_notif_widget.html" %}
     <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
@@ -53,6 +54,7 @@
             {% elif b.published %}<span class="badge badge-published">Pubblicato</span>
             {% else %}<span class="badge badge-draft">Bozza</span>{% endif %}
             {% if rejected_count > 0 %}<span class="badge badge-rejected">{{ rejected_count }} da correggere</span>{% endif %}
+            {% if b.files_deleted_at %}<span class="badge badge-draft">File eliminati</span>{% endif %}
           </td>
           <td class="hint">{{ b.created_at.strftime("%d/%m/%Y") }}</td>
           <td><a href="/admin/batch/{{ b.id }}">Apri →</a></td>

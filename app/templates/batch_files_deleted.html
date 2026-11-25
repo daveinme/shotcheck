@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ batch.name }} — {{ app_name }}{% endblock %}
+{% block body %}
+{% set home = "/admin" if is_staff else "/client" %}
+<div class="topbar">
+  <div class="brand"><a href="{{ home }}">{{ app_name }}</a></div>
+  <div class="row">
+    <span class="who">{{ who.name }}{% if is_staff %} · <span class="badge badge-role">{{ who.role.value }}</span>{% endif %}</span>
+    {% include "_notif_widget.html" %}
+    <form method="post" action="/logout"><button type="submit" class="secondary">Esci</button></form>
+  </div>
+</div>
+
+<div class="container">
+  <nav class="breadcrumb">
+    <a href="{{ home }}">{{ "Studio" if is_staff else "I miei batch" }}</a>
+    <span class="sep">/</span>
+    <span class="current">{{ batch.name }}</span>
+  </nav>
+
+  <h1>{{ batch.name }}</h1>
+
+  <div class="panel" style="border-left:3px solid var(--warn);">
+    <b>Le foto di questo batch sono state eliminate il {{ batch.files_deleted_at.strftime("%d/%m/%Y") }}.</b>
+    <div class="hint" style="margin-top:4px;">
+      {% if is_staff %}
+        {{ batch.files_deleted_count or 0 }} file rimossi da R2. Restano SKU, stati e note come storico.
+      {% else %}
+        Non sono più consultabili né scaricabili. Resta il riepilogo qui sotto.
+      {% endif %}
+    </div>
+  </div>
+
+  {% set approved = batch.photos|selectattr("status.value", "equalto", "approved")|list|length %}
+  {% set rejected = batch.photos|selectattr("status.value", "equalto", "rejected")|list|length %}
+  <div class="panel">
+    <div class="hint">
+      {% if batch.brand %}{{ batch.brand.name }} · {% endif %}{{ batch.photos|length }} foto
+      {% if batch.published_at %} · pubblicato il {{ batch.published_at.strftime("%d/%m/%Y") }}{% endif %}
+      · {{ approved }} approvate{% if rejected %} · {{ rejected }} da correggere{% endif %}
+    </div>
+    <details style="margin-top:10px;">
+      <summary class="hint" style="cursor:pointer;">Elenco SKU</summary>
+      <div style="margin-top:8px; columns: 3; font-size: 13px;">
+        {% for p in batch.photos|sort(attribute="sku") %}<div>{{ p.sku }}</div>{% endfor %}
+      </div>
+    </details>
+  </div>
+</div>
+{% endblock %}

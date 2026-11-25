@@ -58,7 +58,7 @@
       {% for b in batches %}
       <a href="/batch/{{ b.id }}" class="photo-card" style="display:block; padding:16px; text-decoration:none;">
         <div class="sku" style="font-size:16px;">{{ b.name }}</div>
-        <div class="hint">{{ b.photos|length }} foto · pubblicato il {{ b.published_at.strftime("%d/%m/%Y") }}</div>
+        <div class="hint">{{ b.photos|length }} foto · pubblicato il {{ b.published_at.strftime("%d/%m/%Y") }}{% if b.files_deleted_at %} · <span style="color:var(--warn);">foto eliminate il {{ b.files_deleted_at.strftime("%d/%m/%Y") }}</span>{% endif %}</div>
       </a>
       {% endfor %}
     </div>

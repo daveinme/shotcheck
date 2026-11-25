@@ -73,6 +73,10 @@ class Batch(Base):
     published_at = Column(DateTime, nullable=True)
     # galleria pubblica senza brand: sola visualizzazione via link, nessun login richiesto
     public_token = Column(String, unique=True, nullable=True)
+    # Foto eliminate da R2 per liberare spazio: la scheda (SKU, stati, note)
+    # resta come storico, i file no. Vedi app/retention.py.
+    files_deleted_at = Column(DateTime, nullable=True)
+    files_deleted_count = Column(Integer, nullable=True)
 
     brand = relationship("Brand", back_populates="batches")
     photos = relationship("Photo", back_populates="batch", cascade="all, delete-orphan")

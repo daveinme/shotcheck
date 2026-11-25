@@ -20,6 +20,8 @@ async def serve_photo_version(
         raise HTTPException(404, "File non trovato")
     photo = version.photo
     batch = photo.batch
+    if batch.files_deleted_at:
+        raise HTTPException(410, "File eliminato")
 
     if batch.public_token:
         pass  # galleria pubblica: accessibile senza login

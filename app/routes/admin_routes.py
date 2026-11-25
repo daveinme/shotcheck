@@ -26,7 +26,7 @@ from app.storage import (
     raw_sizes_by_batch,
 )
 from app.config import RAW_RETENTION_DAYS
-from app.retention import purge_raw_files
+from app.retention import purge_raw_files, purge_batch_files
 from app.templates_env import templates
 
 _CONTENT_TYPES = {
@@ -202,6 +202,10 @@ async def admin_batch_detail(
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
         raise HTTPException(404, "Batch non trovato")
+    if batch.files_deleted_at:
+        return templates.TemplateResponse("batch_files_deleted.html", {
+            "request": request, "batch": batch, "who": staff, "is_staff": True,
+        })
 
     # albero completo delle cartelle (leggero: solo id/nome/parent), le foto
     # di ogni cartella si caricano via JS solo quando la si apre
@@ -372,6 +376,8 @@ async def download_batch_zip(
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
         raise HTTPException(404, "Batch non trovato")
+    if batch.files_deleted_at:
+        raise HTTPException(410, "Le foto di questo batch sono state eliminate")
     photos = sorted(batch.photos, key=lambda p: p.sku)
 
     # Streaming: i file passano da R2 al client a blocchi, senza costruire
@@ -535,6 +541,20 @@ async def delete_batch(
     db.delete(batch)
     db.commit()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/batch/{batch_id}/purge-files")
+async def purge_batch_files_route(
+    batch_id: int,
+    db: Session = Depends(get_db), staff: User = Depends(require_staff),
+):
+    """Elimina da R2 le foto del batch lasciando la scheda (SKU, stati, note)."""
+    batch = db.query(Batch).filter(Batch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(404, "Batch non trovato")
+    n = purge_batch_files(db, batch)
+    logger.info("Batch %s svuotato a mano da %s: %s file", batch.id, staff.email, n)
+    return RedirectResponse(url=f"/admin/batch/{batch.id}", status_code=303)
 
 
 # ── Bozze (lotti di foto grezze caricati dal brand, non ancora postprodotte) ─
