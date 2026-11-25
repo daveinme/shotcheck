@@ -119,3 +119,17 @@ def raw_presigned_url(raw_batch_id: int, stored_filename: str, ttl: int = R2_PRE
         Params={"Bucket": R2_BUCKET, "Key": raw_upload_key(raw_batch_id, stored_filename)},
         ExpiresIn=ttl,
     )
+
+
+def raw_sizes_by_batch() -> dict[int, int]:
+    """Byte occupati su R2 da ogni lotto RAW, {raw_batch_id: byte}.
+    Solo metadati (ListObjectsV2, 1000 oggetti per chiamata), nessun download."""
+    sizes: dict[int, int] = {}
+    paginator = _client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=R2_BUCKET, Prefix="raw-uploads/"):
+        for obj in page.get("Contents", []):
+            parts = obj["Key"].split("/")
+            if len(parts) >= 3 and parts[1].isdigit():
+                rid = int(parts[1])
+                sizes[rid] = sizes.get(rid, 0) + obj["Size"]
+    return sizes

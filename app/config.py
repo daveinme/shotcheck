@@ -43,3 +43,7 @@ ALLOWED_RAW_UPLOAD_EXTS = ALLOWED_IMAGE_EXTS | {".tiff", ".tif", ".avif", ".txt"
 
 # API key dedicata per upload machine-to-machine da Scout (non credenziali utente)
 SCOUT_API_KEY = os.environ.get("SCOUT_API_KEY", "")
+
+# Giorni dopo la chiusura di un lotto (stato "Pubblicato") oltre i quali i
+# file RAW vengono eliminati da R2 (script purge_raw_scaduti.py, cron notturno)
+RAW_RETENTION_DAYS = int(os.environ.get("RAW_RETENTION_DAYS", "60"))

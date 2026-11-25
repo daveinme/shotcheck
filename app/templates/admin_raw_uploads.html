@@ -66,5 +66,59 @@
     {% endif %}
   </div>
   {% endfor %}
+
+  {% macro size_h(n) -%}
+    {%- if n is none -%}—{%- elif n >= 1073741824 -%}{{ "%.1f"|format(n / 1073741824) }} GB{%- elif n >= 1048576 -%}{{ "%.0f"|format(n / 1048576) }} MB{%- else -%}{{ "%.0f"|format(n / 1024) }} KB{%- endif -%}
+  {%- endmacro %}
+
+  <h2 id="chiusi" style="margin-top:36px;">Lotti chiusi</h2>
+  <p class="hint" style="margin-top:-6px; margin-bottom:16px;">
+    Lotti segnati "Pubblicato". I file RAW vengono eliminati in automatico
+    {{ retention_days }} giorni dopo la chiusura; la scheda del lotto resta.
+    {% if total_closed_bytes is not none %}Spazio occupato su R2: <b>{{ size_h(total_closed_bytes) }}</b>.{% endif %}
+  </p>
+
+  {% if not closed_batches %}
+  <div class="panel hint">Nessun lotto chiuso.</div>
+  {% endif %}
+
+  {% for rb in closed_batches %}
+  <div class="panel">
+    <div class="row" style="justify-content: space-between;">
+      <div>
+        <a href="/admin/raw-batches/{{ rb.id }}" class="sku" style="font-size:16px;">{{ rb.name }}</a>
+        <span class="hint">· n. {{ rb.id }}</span>
+        <div class="hint">
+          {{ rb.brand.name }} ·
+          {% if rb.files_deleted_at %}
+            {{ rb.files_deleted_count or 0 }} file eliminati il {{ rb.files_deleted_at.strftime("%d/%m/%Y") }}
+          {% else %}
+            {{ rb.uploads|length }} file · {{ size_h(sizes.get(rb.id, 0) if sizes else none) }} ·
+            {% if rb.closed_at %}
+              chiuso il {{ rb.closed_at.strftime("%d/%m/%Y") }} · eliminazione automatica il <b>{{ rb.files_expire_at.strftime("%d/%m/%Y") }}</b>
+            {% else %}
+              <span style="color:var(--warn);">chiuso prima della retention: si elimina solo a mano</span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% if not rb.files_deleted_at %}
+      <div class="row">
+        <a href="/admin/raw-batches/{{ rb.id }}/download" class="btn-link">Scarica tutte (.zip)</a>
+        <form method="post" action="/admin/raw-batches/{{ rb.id }}/status">
+          <select name="status" onchange="this.form.submit()">
+            <option value="queued">In coda</option>
+            <option value="processing">In lavorazione</option>
+            <option value="published" selected>Pubblicato</option>
+          </select>
+        </form>
+        <form method="post" action="/admin/raw-batches/{{ rb.id }}/purge-files" onsubmit="return confirm('Eliminare i {{ rb.uploads|length }} file RAW del lotto \'{{ rb.name }}\'? La scheda del lotto resta, i file no. Non è reversibile.');">
+          <button type="submit" class="danger">Elimina file RAW</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
 </div>
 {% endblock %}

@@ -1,3 +1,4 @@
+import logging
 import json
 import secrets
 from datetime import datetime
@@ -22,7 +23,10 @@ from app.notifications import notify_brand
 from app.storage import (
     upload_photo, delete_photo as storage_delete_photo, delete_raw_photo,
     iter_photo_chunks, photo_size, iter_raw_photo_chunks, raw_photo_size,
+    raw_sizes_by_batch,
 )
+from app.config import RAW_RETENTION_DAYS
+from app.retention import purge_raw_files
 from app.templates_env import templates
 
 _CONTENT_TYPES = {
@@ -30,6 +34,7 @@ _CONTENT_TYPES = {
     ".png": "image/png", ".webp": "image/webp",
 }
 
+logger = logging.getLogger("shotcheck")
 router = APIRouter(prefix="/admin")
 
 
@@ -562,8 +567,29 @@ async def raw_uploads_home(request: Request, db: Session = Depends(get_db), staf
     # priorità alta in cima, poi per data di arrivo (più vecchio prima)
     raw_batches.sort(key=lambda rb: not rb.has_high_priority)
 
+    # Lotti chiusi: prima spariscono dalla vista staff pur avendo ancora i
+    # file su R2. Qui restano visibili per monitorare la retention.
+    closed = (
+        db.query(RawBatch)
+        .filter(RawBatch.status == "published", RawBatch.published == True)
+        .all()
+    )
+    # file ancora presenti in cima, i più vecchi (o senza data) per primi
+    closed.sort(key=lambda rb: (
+        rb.files_deleted_at is not None,
+        rb.closed_at or datetime.min,
+    ))
+    try:
+        sizes = raw_sizes_by_batch()
+    except Exception:
+        logger.exception("R2: calcolo spazio lotti RAW fallito")
+        sizes = None
+    total_closed_bytes = sum(sizes.get(rb.id, 0) for rb in closed) if sizes else None
+
     return templates.TemplateResponse("admin_raw_uploads.html", {
         "request": request, "staff": staff, "raw_batches": raw_batches,
+        "closed_batches": closed, "sizes": sizes,
+        "total_closed_bytes": total_closed_bytes, "retention_days": RAW_RETENTION_DAYS,
     })
 
 
@@ -681,9 +707,30 @@ async def set_raw_batch_status(
             f"/raw-batches/{raw_batch.id}",
         )
 
+    # Retention: il conto alla rovescia parte quando lo staff chiude il lotto
+    # e si azzera se lo riapre (es. chiuso per errore).
+    if status == "published" and raw_batch.status.value != "published":
+        raw_batch.closed_at = datetime.utcnow()
+    elif status != "published":
+        raw_batch.closed_at = None
+
     raw_batch.status = status
     db.commit()
     return RedirectResponse(url="/admin/raw-uploads", status_code=303)
+
+
+@router.post("/raw-batches/{raw_batch_id}/purge-files")
+async def purge_raw_batch_files(
+    raw_batch_id: int,
+    db: Session = Depends(get_db), staff: User = Depends(require_staff),
+):
+    """Elimina subito i file RAW di un lotto chiuso, lasciando la scheda."""
+    raw_batch = _require_published_raw_batch(raw_batch_id, db)
+    if raw_batch.status.value != "published":
+        raise HTTPException(400, "Si possono svuotare solo i lotti chiusi (stato Pubblicato)")
+    n = purge_raw_files(db, raw_batch)
+    logger.info("Lotto RAW %s svuotato a mano da %s: %s file", raw_batch.id, staff.email, n)
+    return RedirectResponse(url="/admin/raw-uploads#chiusi", status_code=303)
 
 
 @router.post("/raw-batches/{raw_batch_id}/delete")

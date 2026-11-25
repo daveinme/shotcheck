@@ -35,12 +35,36 @@
   </div>
   {% endif %}
 
+  {% if raw_batch.files_deleted_at %}
+  <div class="panel" style="border-left:3px solid var(--warn);">
+    <b>I file RAW di questo lotto sono stati eliminati il {{ raw_batch.files_deleted_at.strftime("%d/%m/%Y") }}.</b>
+    <div class="hint" style="margin-top:4px;">Le foto editate che ti abbiamo consegnato non sono state toccate.</div>
+  </div>
+  {% elif raw_batch.status.value == "published" and raw_batch.closed_at %}
+  <div class="panel" style="border-left:3px solid var(--warn);">
+    <b>I file RAW di questo lotto saranno eliminati il {{ raw_batch.files_expire_at.strftime("%d/%m/%Y") }}.</b>
+    <div class="hint" style="margin-top:4px;">Se ti servono, scaricali prima di quella data. Le foto editate che ti abbiamo consegnato non verranno toccate.</div>
+  </div>
+  {% elif raw_batch.status.value == "published" %}
+  <div class="panel" style="border-left:3px solid var(--warn);">
+    <b>La lavorazione di questo lotto è completata: i file RAW saranno eliminati a breve.</b>
+    <div class="hint" style="margin-top:4px;">Se ti servono, scaricali adesso. Le foto editate che ti abbiamo consegnato non verranno toccate.</div>
+  </div>
+  {% else %}
+  <div class="panel hint">
+    Conserviamo i file RAW per {{ retention_days }} giorni dopo la fine della lavorazione, poi li eliminiamo
+    in automatico. Le foto editate che ti consegniamo non vengono toccate.
+  </div>
+  {% endif %}
+
   <div class="panel">
     <div class="row" style="justify-content: space-between; align-items:flex-start;">
       <div>
         <h1 style="margin-bottom:4px;">{{ raw_batch.name }}</h1>
         <div class="hint">
-          {% if raw_batch.published %}
+          {% if raw_batch.published and raw_batch.status.value == "published" %}
+            Lavorazione completata
+          {% elif raw_batch.published %}
             Pubblicato — il nostro team lo sta lavorando
           {% else %}
             Bozza privata — solo tu la vedi

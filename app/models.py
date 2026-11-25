@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Enum
@@ -176,6 +176,16 @@ class RawBatch(Base):
     published_at = Column(DateTime, nullable=True)
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+    # Retention: closed_at = quando lo staff lo segna "Pubblicato" (lavorazione
+    # finita). Da lì partono i RAW_RETENTION_DAYS dopo cui i file RAW su R2
+    # vengono eliminati. closed_at nullo su un lotto già chiuso = chiuso prima
+    # dell'introduzione della retention: niente cancellazione automatica,
+    # solo manuale dalla pagina admin.
+    closed_at = Column(DateTime, nullable=True)
+    # Valorizzato quando i file RAW sono stati eliminati: la scheda del lotto
+    # (nome, cartelle, note) resta come storico, i file no.
+    files_deleted_at = Column(DateTime, nullable=True)
+    files_deleted_count = Column(Integer, nullable=True)
 
     brand = relationship("Brand", back_populates="raw_batches")
     uploaded_by = relationship("User")
@@ -185,6 +195,14 @@ class RawBatch(Base):
     @property
     def has_high_priority(self) -> bool:
         return any(f.priority == RawUploadPriority.high for f in self.folders)
+
+    @property
+    def files_expire_at(self):
+        """Data di eliminazione automatica dei RAW, None se non prevista."""
+        if self.closed_at is None or self.files_deleted_at is not None:
+            return None
+        from app.config import RAW_RETENTION_DAYS
+        return self.closed_at + timedelta(days=RAW_RETENTION_DAYS)
 
 
 class RawFolder(Base):

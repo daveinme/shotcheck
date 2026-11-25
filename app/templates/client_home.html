@@ -34,7 +34,7 @@
         <div class="row" style="justify-content: space-between;">
           <div>
             <div class="sku">{{ rb.name }}{% if rb.has_high_priority %} <span class="badge badge-rejected">Urgente</span>{% endif %}</div>
-            <div class="hint">{{ rb.uploads|length }} file · {% if rb.published %}inviato il {{ (rb.published_at or rb.uploaded_at).strftime("%d/%m/%Y") }}{% else %}bozza creata il {{ rb.uploaded_at.strftime("%d/%m/%Y") }}{% endif %}</div>
+            <div class="hint">{{ rb.uploads|length }} file · {% if rb.published %}inviato il {{ (rb.published_at or rb.uploaded_at).strftime("%d/%m/%Y") }}{% if rb.files_deleted_at %} · file RAW eliminati{% elif rb.files_expire_at %} · <span style="color:var(--warn);">file RAW eliminati il {{ rb.files_expire_at.strftime("%d/%m/%Y") }}</span>{% elif rb.status.value == "published" %} · <span style="color:var(--warn);">file RAW in eliminazione a breve</span>{% endif %}{% else %}bozza creata il {{ rb.uploaded_at.strftime("%d/%m/%Y") }}{% endif %}</div>
           </div>
           {% if not rb.published %}
           <span class="badge badge-draft">Bozza · non inviata</span>

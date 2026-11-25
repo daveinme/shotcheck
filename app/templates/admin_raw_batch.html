@@ -18,6 +18,16 @@
     <span class="current">{{ raw_batch.name }}</span>
   </nav>
 
+  {% if raw_batch.files_deleted_at %}
+  <div class="panel" style="border-left:3px solid var(--warn);">
+    <b>File RAW eliminati il {{ raw_batch.files_deleted_at.strftime("%d/%m/%Y") }}</b> ({{ raw_batch.files_deleted_count or 0 }} file). Restano scheda, cartelle e note.
+  </div>
+  {% elif raw_batch.files_expire_at %}
+  <div class="panel hint" style="border-left:3px solid var(--warn);">
+    Lotto chiuso il {{ raw_batch.closed_at.strftime("%d/%m/%Y") }}: i file RAW saranno eliminati in automatico il <b>{{ raw_batch.files_expire_at.strftime("%d/%m/%Y") }}</b>.
+  </div>
+  {% endif %}
+
   <div class="panel">
     <div class="row" style="justify-content: space-between; align-items:flex-start;">
       <div>
