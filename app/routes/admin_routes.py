@@ -574,11 +574,9 @@ async def raw_uploads_home(request: Request, db: Session = Depends(get_db), staf
         .filter(RawBatch.status == "published", RawBatch.published == True)
         .all()
     )
-    # file ancora presenti in cima, i più vecchi (o senza data) per primi
-    closed.sort(key=lambda rb: (
-        rb.files_deleted_at is not None,
-        rb.closed_at or datetime.min,
-    ))
+    # dal più recente al più vecchio (i lotti chiusi prima della retention non
+    # hanno closed_at: si usa la data di pubblicazione o di creazione)
+    closed.sort(key=lambda rb: rb.closed_at or rb.published_at or rb.uploaded_at, reverse=True)
     try:
         sizes = raw_sizes_by_batch()
     except Exception:
