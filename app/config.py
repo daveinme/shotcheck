@@ -25,6 +25,14 @@ R2_PRESIGNED_TTL = int(os.environ.get("R2_PRESIGNED_TTL", "900"))  # secondi
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "notifiche@example.com")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
+# SMTP (es. Gmail con "password per le app"): usato se SENDGRID_API_KEY è vuota
+SMTP_HOST = os.environ.get("SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+# ntfy: URL completo del topic (es. https://ntfy.sh/shotcheck-xyz), token opzionale
+NTFY_URL = os.environ.get("NTFY_URL", "")
+NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "")
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 

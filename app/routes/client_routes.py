@@ -5,14 +5,14 @@ from pathlib import Path
 
 from zipstream import ZipStream
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_login
 from app.config import ALLOWED_IMAGE_EXTS, ALLOWED_RAW_UPLOAD_EXTS
 from app.db import get_db
-from app.mailer import send_admin_digest
+from app.mailer import send_admin_digest, send_raw_batch_published
 from app.models import User, UserRole, Batch, Photo, PhotoFolder, Note, RawBatch, RawFolder, RawUpload, RawUploadStatus, RawNote, Notification
 from app.notifications import notify_brand, notify_staff
 from app.storage import (
@@ -129,6 +129,7 @@ async def delete_client_raw_batch(
 @router.post("/raw-batches/{raw_batch_id}/publish")
 async def publish_client_raw_batch(
     raw_batch_id: int,
+    background: BackgroundTasks,
     db: Session = Depends(get_db), user: User = Depends(require_login),
 ):
     """Il brand dichiara il lotto completo: da qui in poi lo staff lo vede.
@@ -152,6 +153,11 @@ async def publish_client_raw_batch(
         f"/admin/raw-batches/{raw_batch.id}",
     )
     db.commit()
+    # Email/ntfy dopo la risposta: un server SMTP lento non blocca il brand.
+    background.add_task(
+        send_raw_batch_published,
+        raw_batch.brand.name, raw_batch.name, len(raw_batch.uploads), raw_batch.id,
+    )
     return RedirectResponse(url=f"/raw-batches/{raw_batch.id}", status_code=303)
 
 

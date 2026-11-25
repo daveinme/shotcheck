@@ -22,7 +22,7 @@
     <div class="row" style="justify-content: space-between; align-items:flex-start;">
       <div>
         <h1 style="margin-bottom:4px;">{{ raw_batch.name }}</h1>
-        <div class="hint">{{ raw_batch.brand.name }} · {{ raw_batch.uploads|length }} file · caricato il {{ raw_batch.uploaded_at.strftime("%d/%m/%Y") }} da {{ raw_batch.uploaded_by.name }}</div>
+        <div class="hint">{{ raw_batch.brand.name }} · {{ raw_batch.uploads|length }} file · pubblicato il {{ (raw_batch.published_at or raw_batch.uploaded_at).strftime("%d/%m/%Y") }} da {{ raw_batch.uploaded_by.name }}</div>
       </div>
       <div class="row">
         <a href="/admin/raw-batches/{{ raw_batch.id }}/download" class="btn-link">Scarica tutte (.zip)</a>

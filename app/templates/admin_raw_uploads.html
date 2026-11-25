@@ -34,7 +34,7 @@
           <a href="/admin/raw-batches/{{ rb.id }}" class="sku" style="font-size:16px;">{{ rb.name }}</a>
           {% if rb.has_high_priority %}<span class="badge badge-rejected">Urgente</span>{% endif %}
         </div>
-        <div class="hint">{{ rb.brand.name }} · {{ rb.uploads|length }} file · caricato il {{ rb.uploaded_at.strftime("%d/%m/%Y") }} da {{ rb.uploaded_by.name }}</div>
+        <div class="hint">{{ rb.brand.name }} · {{ rb.uploads|length }} file · pubblicato il {{ (rb.published_at or rb.uploaded_at).strftime("%d/%m/%Y") }} da {{ rb.uploaded_by.name }}</div>
       </div>
       <div class="row">
         <a href="/admin/raw-batches/{{ rb.id }}" class="btn-link">Apri</a>

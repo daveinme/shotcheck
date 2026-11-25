@@ -5,8 +5,9 @@ from pathlib import Path
 
 from zipstream import ZipStream
 
-from fastapi import APIRouter, Depends, Form, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import require_staff, require_superadmin
@@ -490,6 +491,7 @@ async def delete_photo(
 @router.post("/batch/{batch_id}/publish")
 async def publish_batch(
     batch_id: int,
+    background: BackgroundTasks,
     db: Session = Depends(get_db), staff: User = Depends(require_staff),
 ):
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
@@ -504,9 +506,12 @@ async def publish_batch(
     )
     db.commit()
 
-    for client in batch.brand.users:
-        if client.role == UserRole.user:
-            send_batch_published(client.email, client.name, batch.name, batch.id)
+    # Galleria pubblica (brand_id nullo): nessun brand da avvisare.
+    # Email dopo la risposta: un server SMTP lento non blocca lo staff.
+    if batch.brand:
+        for client in batch.brand.users:
+            if client.role == UserRole.user:
+                background.add_task(send_batch_published, client.email, client.name, batch.name, batch.id)
 
     return RedirectResponse(url=f"/admin/batch/{batch_id}", status_code=303)
 
@@ -551,7 +556,7 @@ async def raw_uploads_home(request: Request, db: Session = Depends(get_db), staf
         # published == False: bozza ancora in composizione dal brand, invisibile
         # allo staff finché il brand non la pubblica esplicitamente.
         .filter(RawBatch.status != "published", RawBatch.published == True)
-        .order_by(RawBatch.uploaded_at.asc())
+        .order_by(func.coalesce(RawBatch.published_at, RawBatch.uploaded_at).asc())
         .all()
     )
     # priorità alta in cima, poi per data di arrivo (più vecchio prima)
